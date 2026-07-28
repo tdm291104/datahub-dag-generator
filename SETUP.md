@@ -94,11 +94,10 @@ python3 --version    # must show Python 3.11.x — NOT macOS's system Python 3.9
 ## 4. Install the DataHub CLI — include the sqlalchemy extra from the start
 
 ```bash
-pip install --upgrade pip wheel setuptools
-pip install 'acryl-datahub[sqlalchemy]==1.5.0.6'
+uv pip install 'acryl-datahub[sqlalchemy]==1.5.0.6'
 ```
 
-⚠️ **Common mistake**: installing just `pip install acryl-datahub` (without `[sqlalchemy]`) will later fail with:
+⚠️ **Common mistake**: installing just `uv pip install acryl-datahub` (without `[sqlalchemy]`) will later fail with:
 ```
 ModuleNotFoundError: No module named 'sqlalchemy'
 ```
@@ -167,6 +166,18 @@ username: datahub
 password: datahub
 ```
 
+### Stop or remove DataHub
+
+Stop the containers while keeping their data (so a later `datahub docker quickstart` reuses it):
+```bash
+docker compose -p datahub -f ~/.datahub/quickstart/docker-compose.yml --profile quickstart down
+```
+
+Remove DataHub and its local data completely:
+```bash
+datahub docker nuke
+```
+
 ## 8. Load the sample nyc-taxi dataset
 
 ```bash
@@ -216,8 +227,8 @@ Before committing anything, always run `git status` and confirm `datahub-env/` a
 |---|---|---|
 | `NotOpenSSLWarning` when running `datahub version` | Using macOS system Python 3.9 (LibreSSL) | Recreate the venv with `uv venv --python 3.11` |
 | `datahub version` hangs with no output | The subcommand tries to reach the server; use `datahub --version` instead | Not a real error, safe to ignore |
-| `ModuleNotFoundError: No module named 'sqlalchemy'` | Installed `acryl-datahub` without the extra | `pip install 'acryl-datahub[sqlalchemy]'` |
-| `ModuleNotFoundError: No module named 'datahub_classify'` | Same cause — missing sqlalchemy extra after switching versions | `pip install 'acryl-datahub[sqlalchemy]==<version>'` |
+| `ModuleNotFoundError: No module named 'sqlalchemy'` | Installed `acryl-datahub` without the extra | `uv pip install 'acryl-datahub[sqlalchemy]'` |
+| `ModuleNotFoundError: No module named 'datahub_classify'` | Same cause — missing sqlalchemy extra after switching versions | `uv pip install 'acryl-datahub[sqlalchemy]==<version>'` |
 | `docker quickstart` reports insufficient disk space | Docker disk image nearly full (build cache) | `docker builder prune -a`, then raise the disk limit in Docker Desktop |
 | `Client-Server Incompatible` | CLI version differs from server version | Install the matching `acryl-datahub==<server_version>` |
 | Command hangs for a long time, logs full of `Retrying... track.datahubproject.io` | Telemetry trying to reach the network, blocked/timing out | `export DATAHUB_TELEMETRY_ENABLED=false` |

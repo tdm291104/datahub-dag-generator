@@ -16,8 +16,18 @@ Quick start:
 git clone git@github.com:tdm291104/datahub-dag-generator.git
 cd datahub-dag-generator
 uv venv datahub-env --python 3.11 && source datahub-env/bin/activate
-pip install 'acryl-datahub[sqlalchemy]==1.5.0.6'
+uv pip install 'acryl-datahub[sqlalchemy]==1.5.0.6'
 datahub docker quickstart
+```
+
+Stop DataHub while keeping its data:
+```bash
+docker compose -p datahub -f ~/.datahub/quickstart/docker-compose.yml --profile quickstart down
+```
+
+Delete DataHub and its local data:
+```bash
+datahub docker nuke
 ```
 
 ## Demo
