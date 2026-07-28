@@ -1,0 +1,6 @@
+datahub-env/
+__pycache__/
+*.pyc
+.env
+.datahubenv
+data/
