@@ -1,0 +1,11 @@
+# Core DataHub SDK (includes SQLAlchemy, lineage, metadata aspects)
+acryl-datahub[sqlalchemy]==1.5.0.6
+
+# Claude API (LLM agent loop)
+anthropic==0.120.2
+
+# MCP Python client — connects to mcp-server-datahub subprocess
+mcp==2.0.0
+
+# mcp-server-datahub runs via uvx (ships with uv), no pip install needed:
+#   uvx mcp-server-datahub@latest

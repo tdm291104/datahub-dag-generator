@@ -91,23 +91,29 @@ python3 --version    # must show Python 3.11.x — NOT macOS's system Python 3.9
 
 ⚠️ **Common mistake**: using `python3 -m venv` instead of `uv venv` will make macOS default to its system Python 3.9 (built with LibreSSL, incompatible with the newer DataHub CLI). Always use `uv venv --python 3.11` as shown above.
 
-## 4. Install the DataHub CLI — include the sqlalchemy extra from the start
+## 4. Install Python dependencies
 
 ```bash
-uv pip install 'acryl-datahub[sqlalchemy]==1.5.0.6'
+pip install -r requirements.txt
 ```
+
+This installs three packages:
+
+| Package | Purpose |
+|---|---|
+| `acryl-datahub[sqlalchemy]==1.5.0.6` | DataHub CLI + Python SDK for lineage traversal and write-back |
+| `anthropic==0.120.2` | Claude API client — drives the agentic loop |
+| `mcp==2.0.0` | MCP Python client — connects to the DataHub MCP Server subprocess |
+
+**The DataHub MCP Server** (`mcp-server-datahub`) runs as a subprocess via `uvx` — no separate install needed. `uvx` ships with `uv` and downloads the package on first use (~30 seconds, cached afterward).
 
 ⚠️ **Common mistake**: installing just `uv pip install acryl-datahub` (without `[sqlalchemy]`) will later fail with:
 ```
 ModuleNotFoundError: No module named 'sqlalchemy'
 ```
-or
-```
-ModuleNotFoundError: No module named 'datahub_classify'
-```
-Install it correctly from the start using the command above to avoid reinstalling later.
+Use `pip install -r requirements.txt` which already includes the correct extras.
 
-⚠️ **Version must match the server**: the DataHub server (Docker quickstart) currently runs `v1.5.0.6`. The CLI needs to match this version (`==1.5.0.6`); otherwise you'll get a "Client-Server Incompatible" warning (not blocking, but best avoided).
+⚠️ **Version must match the server**: the DataHub server (Docker quickstart) currently runs `v1.5.0.6`. The CLI needs to match (`==1.5.0.6`); otherwise you'll get a "Client-Server Incompatible" warning.
 
 Verify:
 ```bash
@@ -115,7 +121,32 @@ datahub --version
 # should print: acryl-datahub, version 1.5.0.6
 ```
 
-## 5. Disable telemetry (optional but recommended — avoids commands "hanging" due to network timeouts)
+## 5. Configure environment variables
+
+```bash
+cp .env.example .env
+```
+
+Open `.env` and fill in your values:
+
+```
+ANTHROPIC_API_KEY=sk-ant-...        # get yours at https://console.anthropic.com
+DATAHUB_SERVER=http://localhost:8080  # default when running DataHub locally
+```
+
+Load the variables into your current shell (do this in every new terminal session):
+```bash
+export $(cat .env | grep -v '#' | xargs)
+```
+
+Or add it to `~/.zshrc` / `~/.bashrc` to load automatically:
+```bash
+echo 'export ANTHROPIC_API_KEY=sk-ant-...' >> ~/.zshrc
+```
+
+⚠️ **`.env` is in `.gitignore`** — it will never be committed. Never paste your API key directly into code or commit it.
+
+## 6. Disable DataHub telemetry (optional but recommended — avoids commands "hanging" due to network timeouts)
 
 ```bash
 export DATAHUB_TELEMETRY_ENABLED=false
@@ -125,7 +156,7 @@ Add this line to `~/.zshrc` (or `~/.bashrc` on Linux) so you don't need to set i
 echo 'export DATAHUB_TELEMETRY_ENABLED=false' >> ~/.zshrc
 ```
 
-## 6. Prepare Docker — check disk space before quickstart
+## 7. Prepare Docker — check disk space before quickstart
 
 DataHub quickstart requires at least **13GB of free space** in the Docker disk image.
 
@@ -149,7 +180,7 @@ select vdisk file="C:\Users\<user>\AppData\Local\Docker\wsl\data\ext4.vhdx"
 compact vdisk
 ```
 
-## 7. Run DataHub Quickstart
+## 8. Run DataHub Quickstart
 
 ```bash
 datahub docker quickstart
@@ -178,7 +209,7 @@ Remove DataHub and its local data completely:
 datahub docker nuke
 ```
 
-## 8. Load the sample nyc-taxi dataset
+## 9. Load the sample nyc-taxi dataset
 
 ```bash
 mkdir -p data && cd data
@@ -199,15 +230,20 @@ datahub ingest -c ingest.yaml
 datahub ingest -c ingest_pipeline.yaml
 ```
 
-Add lineage + metadata:
+Add lineage:
 ```bash
 python add_lineage.py --all
-python add_metadata.py --all
 ```
 
-Verify in the UI (http://localhost:9002): search `mart_daily_summary`, check the Lineage tab and Tags.
+Add tags and glossary terms — use `setup_demo_metadata.py` from the repo root, **not** the dataset's `add_metadata.py`. The original script emits one tag at a time, causing each emission to overwrite the previous. The fixed version collects all tags per table and emits them in one call:
+```bash
+cd -    # back to repo root
+python setup_demo_metadata.py
+```
 
-## 9. What must NEVER be committed to git
+Verify in the UI (http://localhost:9002): search `mart_daily_summary`, check the **Lineage** tab (should show raw_trips → staging_trips → mart_daily_summary) and the **Tags** panel (should show `daily_refresh`, `pipeline_stage`). The **Glossary** panel should show `Freshness SLA`, `Empty Load`, `Pipeline Stage`.
+
+## 10. What must NEVER be committed to git
 
 `.gitignore` already includes the following lines — **do not remove them**:
 ```
@@ -225,10 +261,16 @@ Before committing anything, always run `git status` and confirm `datahub-env/` a
 
 | Error | Cause | Fix |
 |---|---|---|
+| `ERROR: ANTHROPIC_API_KEY is not set` | Missing env var | `export ANTHROPIC_API_KEY=sk-ant-...` or load `.env` with `export $(cat .env \| grep -v '#' \| xargs)` |
+| `ValueError: ANTHROPIC_API_KEY environment variable is not set` | Same as above | Same fix |
 | `NotOpenSSLWarning` when running `datahub version` | Using macOS system Python 3.9 (LibreSSL) | Recreate the venv with `uv venv --python 3.11` |
 | `datahub version` hangs with no output | The subcommand tries to reach the server; use `datahub --version` instead | Not a real error, safe to ignore |
-| `ModuleNotFoundError: No module named 'sqlalchemy'` | Installed `acryl-datahub` without the extra | `uv pip install 'acryl-datahub[sqlalchemy]'` |
-| `ModuleNotFoundError: No module named 'datahub_classify'` | Same cause — missing sqlalchemy extra after switching versions | `uv pip install 'acryl-datahub[sqlalchemy]==<version>'` |
+| `ModuleNotFoundError: No module named 'sqlalchemy'` | Installed `acryl-datahub` without the extra | `pip install -r requirements.txt` |
+| `ModuleNotFoundError: No module named 'datahub_classify'` | Same cause — missing sqlalchemy extra | `pip install -r requirements.txt` |
+| `ModuleNotFoundError: No module named 'mcp'` | Installed only DataHub, not full requirements | `pip install -r requirements.txt` |
+| `uvx: command not found` | `uv` not installed or not on PATH | Install uv (step 1b) and open a new terminal |
+| MCP server takes 30s on first tool call | `uvx` downloading `mcp-server-datahub` for the first time | Normal — cached after first run |
 | `docker quickstart` reports insufficient disk space | Docker disk image nearly full (build cache) | `docker builder prune -a`, then raise the disk limit in Docker Desktop |
 | `Client-Server Incompatible` | CLI version differs from server version | Install the matching `acryl-datahub==<server_version>` |
 | Command hangs for a long time, logs full of `Retrying... track.datahubproject.io` | Telemetry trying to reach the network, blocked/timing out | `export DATAHUB_TELEMETRY_ENABLED=false` |
+| `mart_daily_summary` has no tags in DataHub UI | `add_metadata.py` overwrites tags one by one | Run `python setup_demo_metadata.py` from the repo root instead |
