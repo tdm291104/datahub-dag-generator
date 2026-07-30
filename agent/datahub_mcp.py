@@ -1,16 +1,11 @@
-"""
-DataHub MCP Server client utilities.
-
-Bridges the async mcp-server-datahub subprocess with the synchronous Claude agent loop.
-The MCP server (mcp-server-datahub) runs as a stdio subprocess via uvx.
-"""
+"""DataHub MCP Server client utilities."""
 from __future__ import annotations
 
 import json
 from mcp import ClientSession
 from mcp.types import Tool as MCPTool
 
-# Shorter descriptions for Claude — preserves essential syntax, strips verbose examples
+# Shorter descriptions for the LLM — preserves essential syntax, strips verbose examples
 _SHORT_DESCRIPTIONS: dict[str, str] = {
     "search": (
         "Search DataHub entities by keyword using full-text search.\n"
@@ -62,19 +57,15 @@ _SHORT_DESCRIPTIONS: dict[str, str] = {
     ),
 }
 
-# Set of tool names served by the MCP server (populated at runtime)
-MCP_TOOL_NAMES: set[str] = set(_SHORT_DESCRIPTIONS.keys())
-
-
-def build_claude_tools(mcp_tools: list[MCPTool]) -> list[dict]:
-    """Convert the MCP server's tool list into Claude API tool definitions."""
+def build_llm_tools(mcp_tools: list[MCPTool]) -> list[dict]:
+    """Convert MCP tools into the provider-neutral tool definition used by the agent."""
     result = []
     for tool in mcp_tools:
         description = _SHORT_DESCRIPTIONS.get(tool.name) or tool.description or tool.name
         result.append({
             "name": tool.name,
             "description": description,
-            # MCP server returns empty schemas; Claude infers params from description
+            # MCP server returns empty schemas; the LLM infers params from description
             "input_schema": {"type": "object"},
         })
     return result

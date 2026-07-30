@@ -6,9 +6,11 @@ Reads real lineage and metadata from DataHub, generates an Airflow DAG file,
 then writes provenance back to DataHub (tags each dataset as dag_managed).
 
 Usage:
-    # Agent mode (default) — Claude reasons about metadata and generates the DAG
+    # Agent mode (default) — OpenRouter + GPT-5.2 reasons about metadata
     python generate_dag.py --target mart_daily_summary --instance nyc_taxi
     python generate_dag.py --target mart_daily_summary --instance nyc_taxi --dag-id nyc_taxi_pipeline
+    python generate_dag.py --provider anthropic --target mart_daily_summary --instance nyc_taxi
+    python generate_dag.py --model deepseek/deepseek-v4-flash --target mart_daily_summary --instance nyc_taxi
 
     # Script mode — deterministic pipeline, no LLM
     python generate_dag.py --target mart_daily_summary --instance nyc_taxi --mode script
@@ -74,20 +76,32 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--mode", choices=["agent", "script"], default="agent",
         help=(
-            "Generation mode: 'agent' (default) uses Claude API for metadata reasoning; "
+            "Generation mode: 'agent' (default) uses an LLM for metadata reasoning; "
             "'script' uses the deterministic pipeline without an LLM"
+        ),
+    )
+    p.add_argument(
+        "--provider", choices=["openrouter", "anthropic"], default="openrouter",
+        help="LLM provider for agent mode (default: openrouter)",
+    )
+    p.add_argument(
+        "--model", metavar="MODEL",
+        help=(
+            "LLM model override. Use an OpenRouter slug by default, or an Anthropic model ID "
+            "with --provider anthropic."
         ),
     )
     return p.parse_args()
 
 
 def _run_agent_mode(args: argparse.Namespace, dag_id: str) -> int:
-    """Run Claude API agentic pipeline."""
+    """Run the LLM agentic pipeline."""
     from agent.llm_agent import run_dag_agent
 
-    if not os.environ.get("ANTHROPIC_API_KEY"):
-        print("ERROR: ANTHROPIC_API_KEY is not set.")
-        print("  export ANTHROPIC_API_KEY=<your-key>")
+    api_key_name = "OPENROUTER_API_KEY" if args.provider == "openrouter" else "ANTHROPIC_API_KEY"
+    if not os.environ.get(api_key_name):
+        print(f"ERROR: {api_key_name} is not set.")
+        print(f"  export {api_key_name}=<your-key>")
         return 1
 
     if args.urn:
@@ -104,6 +118,8 @@ def _run_agent_mode(args: argparse.Namespace, dag_id: str) -> int:
             dry_run=args.dry_run,
             no_writeback=args.no_writeback,
             verbose=True,
+            provider=args.provider,
+            model=args.model,
         )
     except Exception as e:
         if "Connection refused" in str(e) or "ConnectionError" in type(e).__name__:

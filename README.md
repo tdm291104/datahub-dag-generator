@@ -1,8 +1,7 @@
 # DataHub DAG Generator Agent
 
 An AI agent that reads real lineage and metadata from DataHub via the **DataHub MCP Server**,
-then generates a production-ready Airflow DAG with data quality gates — automatically determined
-from the metadata.
+then generates an Airflow DAG skeleton with metadata-driven data quality gates.
 
 **Hackathon:** Build with DataHub: The Agent Hackathon
 **Track:** Metadata-Aware Code Generation & Development
@@ -16,7 +15,7 @@ DataHub MCP Server
       │
       │  search / get_lineage / get_entities
       ▼
- Claude claude-opus-4-8
+ OpenRouter (default: GPT-5.2)
       │
       │  reasons about tags + glossary terms
       │  decides which data quality tasks to add
@@ -39,6 +38,10 @@ Given a target table (e.g. `mart_daily_summary`), the agent:
 4. **Generates the Airflow DAG** in correct topological execution order
 5. **Writes provenance back** to DataHub (`dag_managed` tag + editable description)
 
+The generated DAG is ready to import into Airflow, but its main processing tasks are demo
+`echo` commands. Replace them with your SQL, dbt, Spark, or Python ETL commands before using
+the DAG in production.
+
 ---
 
 ## Architecture
@@ -46,8 +49,9 @@ Given a target table (e.g. `mart_daily_summary`), the agent:
 | Component | Role |
 |---|---|
 | `mcp-server-datahub` (uvx) | DataHub MCP Server subprocess — exposes lineage + metadata as MCP tools |
-| `agent/datahub_mcp.py` | MCP client bridge + tool schema conversion for Claude |
-| `agent/llm_agent.py` | Claude agentic loop: MCP tools + custom render/writeback tools |
+| `agent/datahub_mcp.py` | MCP client bridge + provider-neutral tool definitions |
+| `agent/llm_agent.py` | Provider-neutral agentic loop: MCP tools + custom render/writeback tools |
+| `agent/llm_provider.py` | OpenRouter and direct Anthropic adapters |
 | `agent/dag_renderer.py` | Airflow DAG Python file generator |
 | `agent/freshness_inspector.py` | Metadata-driven freshness detection |
 | `agent/lineage_graph.py` | Kahn's algorithm topological sort |
@@ -66,20 +70,21 @@ git clone git@github.com:tdm291104/datahub-dag-generator.git
 cd datahub-dag-generator
 
 # Create venv and install dependencies
-uv venv datahub-env --python 3.11
+make install
 source datahub-env/bin/activate
-pip install -r requirements.txt
 
 # Copy and fill in your API key
 cp .env.example .env
-# Edit .env and set ANTHROPIC_API_KEY
+# Edit .env and set OPENROUTER_API_KEY
+
+# Default models live in llm_models.yaml; edit it to change the default provider model
 
 # Start DataHub
-datahub docker quickstart
+make start
 
 # Load the nyc-taxi dataset (see SETUP.md §8)
 # Then run the agent:
-export $(cat .env | grep -v '#' | xargs)
+set -a && source .env && set +a
 python generate_dag.py --target mart_daily_summary --instance nyc_taxi
 ```
 
@@ -88,11 +93,22 @@ python generate_dag.py --target mart_daily_summary --instance nyc_taxi
 ## Usage
 
 ```bash
-# Agent mode (default) — Claude reasons about metadata via DataHub MCP Server
+# Agent mode (default) — OpenRouter + GPT-5.2 reasons via DataHub MCP Server
 python generate_dag.py --target mart_daily_summary --instance nyc_taxi
+
+# Choose a different OpenRouter model
+python generate_dag.py --model deepseek/deepseek-v4-flash --target mart_daily_summary --instance nyc_taxi
+
+# Or change the persistent defaults in llm_models.yaml
+
+# Use Anthropic directly instead of OpenRouter
+python generate_dag.py --provider anthropic --target mart_daily_summary --instance nyc_taxi
 
 # Dry-run — print DAG to stdout without saving or writing back
 python generate_dag.py --target mart_daily_summary --instance nyc_taxi --dry-run
+
+# Save the DAG without modifying DataHub metadata
+python generate_dag.py --target mart_daily_summary --instance nyc_taxi --no-writeback
 
 # Script mode — deterministic pipeline, no LLM
 python generate_dag.py --target mart_daily_summary --instance nyc_taxi --mode script
@@ -126,7 +142,7 @@ with DAG(dag_id="nyc_taxi_pipeline", schedule_interval="@daily", ...) as dag:
     aggregate_mart_daily_summary = BashOperator(...)
     freshness_check_mart_daily_summary = BashOperator(...)
 
-    # Claude-reasoned extra tasks
+    # LLM-reasoned extra tasks
     # mart_daily_summary has 'Empty Load' glossary term → silent empty load risk
     validate_row_count_mart_daily_summary = BashOperator(
         bash_command="python -c \"...SELECT COUNT(*)...sys.exit(0 if n > 0 else 1)\""
@@ -145,11 +161,11 @@ with DAG(dag_id="nyc_taxi_pipeline", schedule_interval="@daily", ...) as dag:
 ## Running tests
 
 ```bash
-# Offline tests (no DataHub or Claude required)
-python tests/test_offline.py
+# Run every offline test (no DataHub or LLM required)
+make test
 
-# With pytest
-python -m pytest tests/test_offline.py -v
+# Run only the provider/config conversion tests
+python tests/test_llm_provider.py
 ```
 
 ---

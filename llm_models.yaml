@@ -1,0 +1,11 @@
+openrouter:
+  # Recommended options:
+  # - openai/gpt-5.2                    # default: strongest tool-calling quality
+  # - anthropic/claude-haiku-4.5        # faster and lower cost
+  # - deepseek/deepseek-v4-flash        # lowest-cost agent runs
+  # - moonshotai/kimi-k2.7-code         # long-running code workflows
+  # - qwen/qwen3-coder                  # open-weight coding model
+  default_model: openai/gpt-5.2
+anthropic:
+  # Use a native Anthropic model ID with --provider anthropic.
+  default_model: claude-haiku-4-5-20251001

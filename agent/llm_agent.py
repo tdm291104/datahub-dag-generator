@@ -1,12 +1,12 @@
 """
-Claude-powered DAG Generator Agent using DataHub MCP Server.
+LLM-powered DAG Generator Agent using DataHub MCP Server.
 
 Architecture:
   1. Starts mcp-server-datahub as a stdio subprocess (via uvx)
-  2. Claude discovers lineage + metadata through native DataHub MCP tools
-  3. Claude reasons about metadata signals to decide what tasks to add
-  4. Claude calls render_airflow_dag with the full pipeline specification
-  5. Claude calls datahub_write_back to tag datasets with provenance
+  2. The selected LLM discovers lineage + metadata through DataHub MCP tools
+  3. The LLM reasons about metadata signals to decide what tasks to add
+  4. The LLM calls render_airflow_dag with the full pipeline specification
+  5. The LLM calls datahub_write_back to tag datasets with provenance
 
 MCP tools used (read-only, served by mcp-server-datahub):
   - search          → find dataset URN by table name
@@ -21,15 +21,14 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 
-import anthropic
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
 from agent.datahub_client import DataHubClient, DatasetNode
-from agent.datahub_mcp import MCP_TOOL_NAMES, build_claude_tools, call_tool_async
+from agent.datahub_mcp import build_llm_tools, call_tool_async
 from agent.dag_renderer import render_dag, _stage_verb
+from agent.llm_provider import LLMProvider, create_llm_provider
 from agent.lineage_graph import topological_sort
 
 
@@ -238,20 +237,20 @@ def _execute_custom_tool(
             platform_instance=render_platform,
         )
 
-        # Append Claude-reasoned extra tasks
+        # Append LLM-reasoned extra tasks
         if extra_tasks:
             urn_to_index = {n.urn: i for i, n in enumerate(sorted_nodes)}
             urn_to_name = {n.urn: n.simple_name for n in sorted_nodes}
 
             extra_lines = [
                 "",
-                "    # ── Claude-reasoned extra tasks ─────────────────────────────────",
+                "    # ── LLM-reasoned extra tasks ────────────────────────────────────",
                 "    # Added based on DataHub metadata analysis",
             ]
             for task in extra_tasks:
                 tid = task["task_id"]
                 cmd = task["bash_command"].replace('"', '\\"')
-                doc = task.get("doc", "Added by Claude based on DataHub metadata.")
+                doc = task.get("doc", "Added by the LLM based on DataHub metadata.")
 
                 extra_lines += [
                     f"    {tid} = BashOperator(",
@@ -304,12 +303,8 @@ async def _agent_loop_async(
     dry_run: bool,
     no_writeback: bool,
     verbose: bool,
+    llm: LLMProvider,
 ) -> str:
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
-    if not api_key:
-        raise ValueError("ANTHROPIC_API_KEY environment variable is not set.")
-
-    claude = anthropic.Anthropic(api_key=api_key)
     datahub_client = DataHubClient(server=server)
 
     mcp_params = StdioServerParameters(
@@ -327,7 +322,7 @@ async def _agent_loop_async(
 
             # Discover MCP tools and merge with custom tools
             mcp_tools_response = await session.list_tools()
-            mcp_tool_defs = build_claude_tools(mcp_tools_response.tools)
+            mcp_tool_defs = build_llm_tools(mcp_tools_response.tools)
             all_tools = mcp_tool_defs + CUSTOM_TOOLS
             discovered_mcp_names = {t.name for t in mcp_tools_response.tools}
 
@@ -357,26 +352,23 @@ async def _agent_loop_async(
 
             # Manual agentic loop
             while True:
-                response = claude.messages.create(
-                    model="claude-opus-4-8",
-                    max_tokens=8192,
-                    thinking={"type": "adaptive"},
-                    system=SYSTEM_PROMPT,
-                    tools=all_tools,
-                    messages=messages,
-                )
+                response = llm.complete(SYSTEM_PROMPT, all_tools, messages)
+                tool_uses = response.tool_calls
 
-                tool_uses = [b for b in response.content if b.type == "tool_use"]
-                text_blocks = [b for b in response.content if b.type == "text"]
+                if verbose and response.text:
+                    print(f"[llm]    {response.text}")
 
-                if verbose and text_blocks:
-                    for tb in text_blocks:
-                        print(f"[claude] {tb.text}")
-
-                if response.stop_reason == "end_turn" or not tool_uses:
+                if not tool_uses:
                     break
 
-                messages.append({"role": "assistant", "content": response.content})
+                messages.append({
+                    "role": "assistant",
+                    "content": response.text,
+                    "tool_calls": [
+                        {"id": call.id, "name": call.name, "input": call.input}
+                        for call in tool_uses
+                    ],
+                })
 
                 tool_results = []
                 for tool_use in tool_uses:
@@ -412,12 +404,11 @@ async def _agent_loop_async(
                         print()
 
                     tool_results.append({
-                        "type": "tool_result",
-                        "tool_use_id": tool_use.id,
+                        "tool_call_id": tool_use.id,
                         "content": result_text,
                     })
 
-                messages.append({"role": "user", "content": tool_results})
+                messages.append({"role": "tool", "tool_results": tool_results})
 
     if rendered_dag is None:
         raise RuntimeError(
@@ -439,12 +430,14 @@ def run_dag_agent(
     dry_run: bool = False,
     no_writeback: bool = False,
     verbose: bool = True,
+    provider: str = "openrouter",
+    model: str | None = None,
 ) -> str:
     """
-    Run the Claude DAG Generator Agent. Returns the rendered DAG Python source.
+    Run the DataHub DAG Generator Agent. Returns the rendered DAG Python source.
 
     Requires:
-      - ANTHROPIC_API_KEY env var
+      - OPENROUTER_API_KEY (default) or ANTHROPIC_API_KEY (--provider anthropic)
       - DataHub running at `server`
       - uvx available on PATH (ships with uv)
     """
@@ -456,7 +449,10 @@ def run_dag_agent(
         print(f"[agent]  Target : {target_table} @ {platform_instance}")
         print(f"[agent]  DAG ID : {dag_id}  |  Schedule: {schedule}")
         print(f"[agent]  Server : {server}")
+        print(f"[agent]  LLM    : {provider} / {model or 'default'}")
         print()
+
+    llm = create_llm_provider(provider, model)
 
     return asyncio.run(
         _agent_loop_async(
@@ -468,5 +464,6 @@ def run_dag_agent(
             dry_run=dry_run,
             no_writeback=no_writeback,
             verbose=verbose,
+            llm=llm,
         )
     )

@@ -94,15 +94,17 @@ python3 --version    # must show Python 3.11.x — NOT macOS's system Python 3.9
 ## 4. Install Python dependencies
 
 ```bash
-pip install -r requirements.txt
+make install
 ```
 
-This installs three packages:
+This installs five direct packages:
 
 | Package | Purpose |
 |---|---|
 | `acryl-datahub[sqlalchemy]==1.5.0.6` | DataHub CLI + Python SDK for lineage traversal and write-back |
-| `anthropic==0.120.2` | Claude API client — drives the agentic loop |
+| `openai` | OpenAI-compatible client used to call OpenRouter (default provider) |
+| `anthropic==0.120.2` | Optional direct Anthropic provider |
+| `PyYAML` | Reads the provider default-model configuration |
 | `mcp==2.0.0` | MCP Python client — connects to the DataHub MCP Server subprocess |
 
 **The DataHub MCP Server** (`mcp-server-datahub`) runs as a subprocess via `uvx` — no separate install needed. `uvx` ships with `uv` and downloads the package on first use (~30 seconds, cached afterward).
@@ -111,7 +113,7 @@ This installs three packages:
 ```
 ModuleNotFoundError: No module named 'sqlalchemy'
 ```
-Use `pip install -r requirements.txt` which already includes the correct extras.
+Use `make install`, which creates the venv if necessary and installs the correct extras.
 
 ⚠️ **Version must match the server**: the DataHub server (Docker quickstart) currently runs `v1.5.0.6`. The CLI needs to match (`==1.5.0.6`); otherwise you'll get a "Client-Server Incompatible" warning.
 
@@ -130,18 +132,22 @@ cp .env.example .env
 Open `.env` and fill in your values:
 
 ```
-ANTHROPIC_API_KEY=sk-ant-...        # get yours at https://console.anthropic.com
+OPENROUTER_API_KEY=sk-or-v1-...      # default provider; get one at https://openrouter.ai/keys
+# ANTHROPIC_API_KEY=sk-ant-...       # optional, only for --provider anthropic
 DATAHUB_SERVER=http://localhost:8080  # default when running DataHub locally
 ```
 
+Default models are stored in `llm_models.yaml`. Change `openrouter.default_model` to test a
+different OpenRouter model without changing code; `--model` still overrides it for one command.
+
 Load the variables into your current shell (do this in every new terminal session):
 ```bash
-export $(cat .env | grep -v '#' | xargs)
+set -a && source .env && set +a
 ```
 
 Or add it to `~/.zshrc` / `~/.bashrc` to load automatically:
 ```bash
-echo 'export ANTHROPIC_API_KEY=sk-ant-...' >> ~/.zshrc
+echo 'export OPENROUTER_API_KEY=sk-or-v1-...' >> ~/.zshrc
 ```
 
 ⚠️ **`.env` is in `.gitignore`** — it will never be committed. Never paste your API key directly into code or commit it.
@@ -183,7 +189,7 @@ compact vdisk
 ## 8. Run DataHub Quickstart
 
 ```bash
-datahub docker quickstart
+make start
 ```
 
 The first run takes 10-20 minutes (pulling several Docker images). Wait until you see:
@@ -199,9 +205,9 @@ password: datahub
 
 ### Stop or remove DataHub
 
-Stop the containers while keeping their data (so a later `datahub docker quickstart` reuses it):
+Stop the containers while keeping their data (so a later `make start` reuses it):
 ```bash
-docker compose -p datahub -f ~/.datahub/quickstart/docker-compose.yml --profile quickstart down
+make stop
 ```
 
 Remove DataHub and its local data completely:
@@ -261,13 +267,13 @@ Before committing anything, always run `git status` and confirm `datahub-env/` a
 
 | Error | Cause | Fix |
 |---|---|---|
-| `ERROR: ANTHROPIC_API_KEY is not set` | Missing env var | `export ANTHROPIC_API_KEY=sk-ant-...` or load `.env` with `export $(cat .env \| grep -v '#' \| xargs)` |
-| `ValueError: ANTHROPIC_API_KEY environment variable is not set` | Same as above | Same fix |
+| `ERROR: OPENROUTER_API_KEY is not set` | Missing default-provider key | Set `OPENROUTER_API_KEY` in `.env`, then run `set -a && source .env && set +a` |
+| `ERROR: ANTHROPIC_API_KEY is not set` | `--provider anthropic` without an Anthropic key | Set `ANTHROPIC_API_KEY` or omit `--provider anthropic` |
 | `NotOpenSSLWarning` when running `datahub version` | Using macOS system Python 3.9 (LibreSSL) | Recreate the venv with `uv venv --python 3.11` |
 | `datahub version` hangs with no output | The subcommand tries to reach the server; use `datahub --version` instead | Not a real error, safe to ignore |
-| `ModuleNotFoundError: No module named 'sqlalchemy'` | Installed `acryl-datahub` without the extra | `pip install -r requirements.txt` |
-| `ModuleNotFoundError: No module named 'datahub_classify'` | Same cause — missing sqlalchemy extra | `pip install -r requirements.txt` |
-| `ModuleNotFoundError: No module named 'mcp'` | Installed only DataHub, not full requirements | `pip install -r requirements.txt` |
+| `ModuleNotFoundError: No module named 'sqlalchemy'` | Installed `acryl-datahub` without the extra | `make install` |
+| `ModuleNotFoundError: No module named 'datahub_classify'` | Same cause — missing sqlalchemy extra | `make install` |
+| `ModuleNotFoundError: No module named 'mcp'` | Installed only DataHub, not full requirements | `make install` |
 | `uvx: command not found` | `uv` not installed or not on PATH | Install uv (step 1b) and open a new terminal |
 | MCP server takes 30s on first tool call | `uvx` downloading `mcp-server-datahub` for the first time | Normal — cached after first run |
 | `docker quickstart` reports insufficient disk space | Docker disk image nearly full (build cache) | `docker builder prune -a`, then raise the disk limit in Docker Desktop |
