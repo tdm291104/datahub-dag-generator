@@ -1,7 +1,6 @@
-"""DataHub MCP Server client utilities."""
+"""DataHub MCP client utilities."""
 from __future__ import annotations
 
-import json
 from mcp import ClientSession
 from mcp.types import Tool as MCPTool
 

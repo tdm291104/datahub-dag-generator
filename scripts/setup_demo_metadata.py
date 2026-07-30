@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Correctly attach all tags and glossary terms to nyc-taxi datasets.
+Attach demo tags and glossary terms to nyc-taxi datasets.
 
 The static-assets add_metadata.py emits one tag at a time, which causes each
 emission to overwrite the previous (DataHub UPSERT replaces the whole aspect).
@@ -10,7 +10,7 @@ Run this after: datahub ingest + add_lineage.py + add_metadata.py
 """
 from __future__ import annotations
 
-import sys
+import argparse
 import time
 
 from datahub.emitter.mcp import MetadataChangeProposalWrapper
@@ -24,7 +24,8 @@ from datahub.metadata.schema_classes import (
     TagAssociationClass,
 )
 
-DATAHUB_SERVER = "http://localhost:8080"
+from dag_generator.config import load_settings
+
 PLATFORM = "sqlite"
 
 # All tags each table should have (collected per-table so we emit all at once)
@@ -43,8 +44,8 @@ TABLE_GLOSSARY: dict[str, list[str]] = {
 
 def discover_urns(graph: DataHubGraph, platform_instance: str) -> dict[str, str]:
     query = """
-    {
-        search(input: {type: DATASET, query: "%s", start: 0, count: 100}) {
+    query FindDemoDatasets($query: String!) {
+        search(input: {type: DATASET, query: $query, start: 0, count: 100}) {
             searchResults {
                 entity {
                     urn
@@ -53,8 +54,8 @@ def discover_urns(graph: DataHubGraph, platform_instance: str) -> dict[str, str]
             }
         }
     }
-    """ % platform_instance
-    result = graph.execute_graphql(query)
+    """
+    result = graph.execute_graphql(query, variables={"query": platform_instance})
     urn_map = {}
     for item in result.get("search", {}).get("searchResults", []):
         entity = item.get("entity", {})
@@ -105,15 +106,27 @@ def attach_all_metadata(emitter: DatahubRestEmitter, urn_map: dict[str, str]) ->
 
 
 def main() -> int:
-    instances = ["nyc_taxi", "nyc_taxi_pipeline"]
-    if "--instance" in " ".join(sys.argv):
-        for arg in sys.argv[1:]:
-            if arg.startswith("--instance="):
-                instances = [arg.split("=", 1)[1]]
+    parser = argparse.ArgumentParser(description="Attach metadata to nyc-taxi demo data")
+    parser.add_argument(
+        "--instance",
+        action="append",
+        help="Instance to update; repeat for multiple instances",
+    )
+    args = parser.parse_args()
+    instances = args.instance or ["nyc_taxi", "nyc_taxi_pipeline"]
+    settings = load_settings()
 
-    print(f"Connecting to {DATAHUB_SERVER}...")
-    graph = DataHubGraph(DatahubClientConfig(server=DATAHUB_SERVER))
-    emitter = DatahubRestEmitter(DATAHUB_SERVER)
+    print(f"Connecting to {settings.datahub_server}...")
+    graph = DataHubGraph(
+        DatahubClientConfig(
+            server=settings.datahub_server,
+            token=settings.datahub_token,
+        )
+    )
+    emitter = DatahubRestEmitter(
+        settings.datahub_server,
+        token=settings.datahub_token,
+    )
 
     for instance in instances:
         print(f"\nInstance: {instance}")
@@ -128,4 +141,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    raise SystemExit(main())

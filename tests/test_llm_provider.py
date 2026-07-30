@@ -1,15 +1,11 @@
 """Offline checks for provider message and tool conversion."""
 from __future__ import annotations
 
-import os
 from pathlib import Path
-import sys
 import tempfile
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-
-from agent.llm_provider import (
-    DEFAULT_MODELS,
+from dag_generator.config import MODEL_CONFIG_FILE
+from dag_generator.llm import (
     load_default_models,
     _to_anthropic_messages,
     _to_openrouter_messages,
@@ -54,8 +50,9 @@ def test_anthropic_conversion():
 
 
 def test_default_models():
-    assert DEFAULT_MODELS["openrouter"] == "openai/gpt-5.2"
-    assert DEFAULT_MODELS["anthropic"] == "claude-haiku-4-5-20251001"
+    models = load_default_models(MODEL_CONFIG_FILE)
+    assert models["openrouter"] == "openai/gpt-5.2"
+    assert models["anthropic"] == "claude-haiku-4-5-20251001"
 
 
 def test_model_config_can_be_changed_for_tests():

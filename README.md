@@ -1,175 +1,135 @@
-# DataHub DAG Generator Agent
+# DataHub DAG Generator
 
-An AI agent that reads real lineage and metadata from DataHub via the **DataHub MCP Server**,
-then generates an Airflow DAG skeleton with metadata-driven data quality gates.
+Generates an Airflow DAG skeleton from lineage and metadata stored in DataHub.
+Agent mode uses DataHub MCP plus an LLM; script mode runs the same core renderer
+without an LLM.
 
-**Hackathon:** Build with DataHub: The Agent Hackathon
-**Track:** Metadata-Aware Code Generation & Development
+The generated processing tasks are placeholders. Replace their `echo` commands
+and `/path/to/*.db` paths with real SQL, dbt, Spark, or Python ETL commands
+before running the DAG in production.
 
----
+## Flow
 
-## What it does
-
-```
-DataHub MCP Server
-      │
-      │  search / get_lineage / get_entities
-      ▼
- OpenRouter (default: GPT-5.2)
-      │
-      │  reasons about tags + glossary terms
-      │  decides which data quality tasks to add
-      ▼
- Airflow DAG (Python file)
-      │
-      │  writes dag_managed tag + description back
-      ▼
- DataHub (provenance)
+```text
+CLI
+ ├─ agent mode  → OpenRouter/Anthropic → DataHub MCP
+ └─ script mode → DataHub Python SDK
+                        │
+                        ▼
+              validated generation plan
+                        │
+                        ▼
+              deterministic DAG renderer
+                        │
+                        ├─ output/<dag_id>.py
+                        └─ optional DataHub write-back
 ```
 
-Given a target table (e.g. `mart_daily_summary`), the agent:
+The renderer derives freshness gates from `daily_refresh`, `hourly_refresh`,
+`weekly_refresh`, or freshness glossary terms. It only accepts predefined
+LLM-planned checks:
 
-1. **Discovers the full upstream pipeline** via `get_lineage` on the DataHub MCP Server
-2. **Reads metadata** (tags, glossary terms) for every node via `get_entities`
-3. **Reasons** about what data quality tasks are needed:
-   - `daily_refresh` tag or `Freshness SLA` glossary → adds `freshness_check_<table>` gate task
-   - `Empty Load` glossary → adds `validate_row_count_<table>` task (catches silent empty loads)
-   - `pii` tag → adds `data_audit_<table>` task
-4. **Generates the Airflow DAG** in correct topological execution order
-5. **Writes provenance back** to DataHub (`dag_managed` tag + editable description)
+- `row_count` for Empty Load metadata
+- `pii_audit` for PII metadata
 
-The generated DAG is ready to import into Airflow, but its main processing tasks are demo
-`echo` commands. Replace them with your SQL, dbt, Spark, or Python ETL commands before using
-the DAG in production.
+The LLM cannot provide arbitrary shell commands. DAG ID, schedule, output
+location, write-back, and executable templates stay under application control.
 
----
+## Project structure
 
-## Architecture
-
-| Component | Role |
-|---|---|
-| `mcp-server-datahub` (uvx) | DataHub MCP Server subprocess — exposes lineage + metadata as MCP tools |
-| `agent/datahub_mcp.py` | MCP client bridge + provider-neutral tool definitions |
-| `agent/llm_agent.py` | Provider-neutral agentic loop: MCP tools + custom render/writeback tools |
-| `agent/llm_provider.py` | OpenRouter and direct Anthropic adapters |
-| `agent/dag_renderer.py` | Airflow DAG Python file generator |
-| `agent/freshness_inspector.py` | Metadata-driven freshness detection |
-| `agent/lineage_graph.py` | Kahn's algorithm topological sort |
-| `agent/datahub_client.py` | DataHub Python SDK (write-back, script mode) |
-| `generate_dag.py` | CLI entry point |
-
----
+```text
+src/dag_generator/
+  cli.py          command-line interface
+  config.py       .env and runtime limits
+  models.py       provider-independent data contracts
+  datahub.py      DataHub SDK queries and write-back
+  mcp.py          DataHub MCP bridge
+  llm.py          OpenRouter and Anthropic adapters
+  agent_loop.py   bounded agent orchestration
+  lineage.py      topological sorting
+  policies.py     metadata-driven quality rules
+  airflow.py      deterministic Airflow renderer
+scripts/
+  setup_demo_metadata.py
+tests/
+generate_dag.py   backward-compatible wrapper
+```
 
 ## Setup
 
-See [SETUP.md](./SETUP.md) for full environment setup (DataHub quickstart + nyc-taxi dataset).
-
-Quick start:
 ```bash
-git clone git@github.com:tdm291104/datahub-dag-generator.git
-cd datahub-dag-generator
-
-# Create venv and install dependencies
 make install
-source datahub-env/bin/activate
-
-# Copy and fill in your API key
 cp .env.example .env
-# Edit .env and set OPENROUTER_API_KEY
+# Add OPENROUTER_API_KEY to .env
 
-# Default models live in llm_models.yaml; edit it to change the default provider model
-
-# Start DataHub
+# Docker must already be running
 make start
-
-# Load the nyc-taxi dataset (see SETUP.md §8)
-# Then run the agent:
-set -a && source .env && set +a
-python generate_dag.py --target mart_daily_summary --instance nyc_taxi
 ```
 
----
+See [SETUP.md](./SETUP.md) for DataHub quickstart and the nyc-taxi demo dataset.
+After ingesting the demo data:
+
+```bash
+make setup-demo-metadata
+```
 
 ## Usage
 
 ```bash
-# Agent mode (default) — OpenRouter + GPT-5.2 reasons via DataHub MCP Server
-python generate_dag.py --target mart_daily_summary --instance nyc_taxi
+# Agent mode: OpenRouter + configured default model
+datahub-dag --target mart_daily_summary --instance nyc_taxi
 
-# Choose a different OpenRouter model
-python generate_dag.py --model deepseek/deepseek-v4-flash --target mart_daily_summary --instance nyc_taxi
+# Preview only
+datahub-dag --target mart_daily_summary --instance nyc_taxi --dry-run
 
-# Or change the persistent defaults in llm_models.yaml
+# Deterministic mode without an LLM
+datahub-dag --mode script --target mart_daily_summary --instance nyc_taxi
 
-# Use Anthropic directly instead of OpenRouter
-python generate_dag.py --provider anthropic --target mart_daily_summary --instance nyc_taxi
+# One-run model override through OpenRouter
+datahub-dag --model deepseek/deepseek-v4-flash \
+  --target mart_daily_summary --instance nyc_taxi
 
-# Dry-run — print DAG to stdout without saving or writing back
-python generate_dag.py --target mart_daily_summary --instance nyc_taxi --dry-run
+# Direct Anthropic provider
+datahub-dag --provider anthropic \
+  --target mart_daily_summary --instance nyc_taxi
 
-# Save the DAG without modifying DataHub metadata
-python generate_dag.py --target mart_daily_summary --instance nyc_taxi --no-writeback
-
-# Script mode — deterministic pipeline, no LLM
-python generate_dag.py --target mart_daily_summary --instance nyc_taxi --mode script
-
-# Custom DAG ID and schedule
-python generate_dag.py --target mart_daily_summary --instance nyc_taxi \
-  --dag-id my_pipeline --schedule "@hourly"
+# Explicitly allow provenance updates in DataHub
+datahub-dag --writeback \
+  --target mart_daily_summary --instance nyc_taxi
 ```
 
----
+Write-back is disabled by default. `--dry-run` never creates a file or changes
+DataHub metadata, even when `--writeback` is also present.
 
-## Example output
-
-```python
-# Generated by DataHub DAG Generator Agent
-# Source: DataHub lineage graph — nyc_taxi_pipeline
-
-with DAG(dag_id="nyc_taxi_pipeline", schedule_interval="@daily", ...) as dag:
-
-    # Stage 0: raw_trips
-    ingest_raw_trips = BashOperator(...)
-
-    # Freshness gate — DataHub metadata: tag: daily_refresh, glossary: Freshness SLA
-    freshness_check_raw_trips = BashOperator(...)
-
-    # Stage 1: staging_trips
-    transform_staging_trips = BashOperator(...)
-    freshness_check_staging_trips = BashOperator(...)
-
-    # Stage 2: mart_daily_summary
-    aggregate_mart_daily_summary = BashOperator(...)
-    freshness_check_mart_daily_summary = BashOperator(...)
-
-    # LLM-reasoned extra tasks
-    # mart_daily_summary has 'Empty Load' glossary term → silent empty load risk
-    validate_row_count_mart_daily_summary = BashOperator(
-        bash_command="python -c \"...SELECT COUNT(*)...sys.exit(0 if n > 0 else 1)\""
-    )
-
-    # Dependencies from DataHub lineage graph
-    ingest_raw_trips >> freshness_check_raw_trips
-    freshness_check_raw_trips >> transform_staging_trips
-    transform_staging_trips >> freshness_check_staging_trips
-    freshness_check_staging_trips >> aggregate_mart_daily_summary
-    aggregate_mart_daily_summary >> validate_row_count_mart_daily_summary
-```
-
----
-
-## Running tests
+The previous invocation remains available after `make install`:
 
 ```bash
-# Run every offline test (no DataHub or LLM required)
-make test
-
-# Run only the provider/config conversion tests
-python tests/test_llm_provider.py
+python generate_dag.py --target mart_daily_summary --instance nyc_taxi
 ```
 
----
+## Configuration
 
-## Demo
+Default models are editable in `src/dag_generator/llm_models.yaml`.
+Command-line `--model` overrides the configured model for one run. Set
+`LLM_MODEL_CONFIG` to load another YAML file without modifying the package.
 
-(video link to be added)
+`.env` is loaded automatically; an already-exported shell variable has priority.
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `DATAHUB_SERVER` | `http://localhost:8080` | DataHub GMS API |
+| `DATAHUB_TOKEN` | empty | Remote/authenticated DataHub |
+| `OPENROUTER_API_KEY` | empty | Default LLM provider |
+| `ANTHROPIC_API_KEY` | empty | Direct Anthropic option |
+| `LLM_MODEL_CONFIG` | packaged YAML | Optional model-config path |
+| `DATAHUB_MCP_PACKAGE` | `mcp-server-datahub@0.6.0` | Pinned MCP server |
+| `MAX_AGENT_TURNS` | `20` | Agent cost/runaway limit |
+| `MAX_TOOL_RESULT_CHARS` | `200000` | Per-tool context limit |
+| `MAX_LINEAGE_NODES` | `200` | Maximum rendered lineage size |
+
+## Verification
+
+```bash
+make test   # offline unit checks
+make check  # tests plus Python syntax checks
+```

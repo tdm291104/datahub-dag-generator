@@ -2,6 +2,12 @@ datahub-env/
 __pycache__/
 *.pyc
 .env
+.env.*
+!.env.example
 .datahubenv
 data/
 output/
+*.egg-info/
+build/
+dist/
+.DS_Store

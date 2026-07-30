@@ -1,12 +1,14 @@
 """
-DataHub client: query lineage and metadata via DataHubGraph (acryl-datahub SDK).
+DataHub adapter: query lineage and metadata via the acryl-datahub SDK.
 Single responsibility — knows how to talk to DataHub, nothing else.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from collections import deque
 from typing import Optional, Type
 
+from datahub.emitter.mcp import MetadataChangeProposalWrapper
+from datahub.emitter.rest_emitter import DatahubRestEmitter
 from datahub.ingestion.graph.client import DataHubGraph, DatahubClientConfig
 from datahub.metadata.schema_classes import (
     DatasetPropertiesClass,
@@ -17,24 +19,15 @@ from datahub.metadata.schema_classes import (
     UpstreamLineageClass,
 )
 
-DATAHUB_GMS = "http://localhost:8080"
-
-
-@dataclass
-class DatasetNode:
-    urn: str
-    simple_name: str          # e.g. "raw_trips"
-    upstream_urns: list[str] = field(default_factory=list)
-    tags: list[str] = field(default_factory=list)           # e.g. ["daily_refresh", "pii"]
-    glossary_terms: list[str] = field(default_factory=list) # e.g. ["FreshnessSLA"]
-    description: str = ""
-    owner: str = ""
+from dag_generator.models import DatasetNode
 
 
 class DataHubClient:
-    def __init__(self, server: str = DATAHUB_GMS):
+    def __init__(self, server: str, token: str | None = None):
         self.server = server
-        self.graph = DataHubGraph(DatahubClientConfig(server=server))
+        self.token = token
+        self.graph = DataHubGraph(DatahubClientConfig(server=server, token=token))
+        self.emitter = DatahubRestEmitter(server, token=token)
 
     # ── lineage traversal ───────────────────────────────────────────────────
 
@@ -44,10 +37,10 @@ class DataHubClient:
         Returns {urn: DatasetNode} for root and all ancestors.
         """
         visited: dict[str, DatasetNode] = {}
-        queue = [root_urn]
+        queue = deque([root_urn])
 
         while queue:
-            urn = queue.pop(0)
+            urn = queue.popleft()
             if urn in visited:
                 continue
             node = self._fetch_node(urn)
@@ -102,10 +95,10 @@ class DataHubClient:
         Returns the first exact match.
         """
         query = """
-        {
+        query FindDataset($query: String!) {
             search(input: {
                 type: DATASET,
-                query: "%s",
+                query: $query,
                 start: 0,
                 count: 50
             }) {
@@ -120,9 +113,9 @@ class DataHubClient:
                 }
             }
         }
-        """ % table_name
+        """
 
-        result = self.graph.execute_graphql(query)
+        result = self.graph.execute_graphql(query, variables={"query": table_name})
         for item in result.get("search", {}).get("searchResults", []):
             urn = item.get("entity", {}).get("urn", "")
             # Match exact instance AND exact table name (avoid prefix collisions)
@@ -137,10 +130,6 @@ class DataHubClient:
         Write back to DataHub: add 'dag_managed' tag + append DAG info to description.
         Uses EditableDatasetProperties so it doesn't overwrite ingestion-set properties.
         """
-        from datahub.emitter.mcp import MetadataChangeProposalWrapper
-        from datahub.emitter.rest_emitter import DatahubRestEmitter
-
-        emitter = DatahubRestEmitter(self.server)
         dag_tag_urn = "urn:li:tag:dag_managed"
 
         # Merge new tag with existing tags to avoid overwriting
@@ -148,7 +137,7 @@ class DataHubClient:
         existing_tag_list = list(existing_tags_aspect.tags) if existing_tags_aspect else []
         if not any(t.tag == dag_tag_urn for t in existing_tag_list):
             existing_tag_list.append(TagAssociationClass(tag=dag_tag_urn))
-        emitter.emit(MetadataChangeProposalWrapper(
+        self.emitter.emit(MetadataChangeProposalWrapper(
             entityUrn=urn,
             aspect=GlobalTagsClass(tags=existing_tag_list),
         ))
@@ -159,7 +148,7 @@ class DataHubClient:
         dag_note = f"[DAG: {dag_id}] Managed by DataHub DAG Generator Agent."
         if dag_note not in existing_desc:
             new_desc = f"{existing_desc}\n{dag_note}".strip() if existing_desc else dag_note
-            emitter.emit(MetadataChangeProposalWrapper(
+            self.emitter.emit(MetadataChangeProposalWrapper(
                 entityUrn=urn,
                 aspect=EditableDatasetPropertiesClass(description=new_desc),
             ))
@@ -167,10 +156,7 @@ class DataHubClient:
     # ── helpers ─────────────────────────────────────────────────────────────
 
     def _get_aspect(self, urn: str, aspect_type: Type) -> Optional[object]:
-        try:
-            return self.graph.get_aspect(urn, aspect_type)
-        except Exception:
-            return None
+        return self.graph.get_aspect(urn, aspect_type)
 
 
 def _urn_to_table_name(urn: str) -> str:

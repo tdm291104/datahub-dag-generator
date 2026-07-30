@@ -10,14 +10,15 @@ Run:
 from __future__ import annotations
 
 import sys
-import os
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-
-from agent.datahub_client import DatasetNode
-from agent.freshness_inspector import requires_freshness_check, freshness_reason
-from agent.lineage_graph import topological_sort
-from agent.dag_renderer import render_dag
+from dag_generator.airflow import render_dag
+from dag_generator.lineage import topological_sort
+from dag_generator.models import DatasetNode
+from dag_generator.policies import (
+    freshness_reason,
+    recommended_quality_checks,
+    requires_freshness_check,
+)
 
 # ── Mock data: nyc-taxi 3-stage pipeline ────────────────────────────────────
 
@@ -152,6 +153,25 @@ def test_dag_render_stage_verbs():
     print("  PASS: stage verbs ingest/transform/aggregate assigned correctly")
 
 
+def test_metadata_quality_checks_are_deterministic():
+    sorted_nodes = topological_sort(MOCK_NODES)
+    checks = recommended_quality_checks(sorted_nodes)
+    dag = render_dag(
+        sorted_nodes,
+        dag_id="nyc_taxi_pipeline",
+        platform_instance="nyc_taxi",
+        target_table="mart_daily_summary",
+        quality_checks=checks,
+    )
+    assert "data_audit_raw_trips" in dag
+    assert "validate_row_count_mart_daily_summary" in dag
+    assert (
+        "freshness_check_mart_daily_summary >> "
+        "validate_row_count_mart_daily_summary"
+    ) in dag
+    print("  PASS: deterministic metadata quality checks")
+
+
 def run_all():
     tests = [
         test_topological_sort_order,
@@ -164,6 +184,7 @@ def run_all():
         test_dag_render_dependency_wiring,
         test_dag_render_valid_python_syntax,
         test_dag_render_stage_verbs,
+        test_metadata_quality_checks_are_deterministic,
     ]
 
     print(f"\nRunning {len(tests)} offline tests...\n")

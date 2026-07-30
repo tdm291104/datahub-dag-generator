@@ -1,5 +1,5 @@
 """
-Detect freshness monitoring requirements from DataHub metadata.
+Metadata-driven data-quality policies.
 
 A dataset requires a freshness gate if DataHub says it's time-sensitive:
   - Tag:          daily_refresh / hourly_refresh / weekly_refresh
@@ -10,7 +10,7 @@ after the main task and before the next downstream stage can start.
 """
 from __future__ import annotations
 
-from agent.datahub_client import DatasetNode
+from dag_generator.models import DatasetNode, QualityCheck
 
 _FRESHNESS_TAGS = {"daily_refresh", "hourly_refresh", "weekly_refresh"}
 
@@ -37,3 +37,18 @@ def freshness_reason(node: DatasetNode) -> str:
         if term in _FRESHNESS_TERM_SUFFIXES or "freshness" in term.lower():
             reasons.append(f"glossary: {term}")
     return ", ".join(reasons)
+
+
+def recommended_quality_checks(nodes: list[DatasetNode]) -> list[QualityCheck]:
+    """Return deterministic checks for metadata signals used by script mode."""
+    checks: list[QualityCheck] = []
+    for node in nodes:
+        normalized_terms = {
+            term.lower().replace(" ", "").replace("_", "")
+            for term in node.glossary_terms
+        }
+        if "emptyload" in normalized_terms:
+            checks.append(QualityCheck(kind="row_count", after_urn=node.urn))
+        if any(tag.lower() == "pii" for tag in node.tags):
+            checks.append(QualityCheck(kind="pii_audit", after_urn=node.urn))
+    return checks

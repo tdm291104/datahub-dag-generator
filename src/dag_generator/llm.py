@@ -1,18 +1,17 @@
-"""Provider-neutral chat completions for the DAG agent."""
+"""Provider-neutral LLM chat completions."""
 from __future__ import annotations
 
 from dataclasses import dataclass
 import json
-import os
 from pathlib import Path
 from typing import Any, Protocol
 
 import yaml
 
-MODEL_CONFIG_PATH = Path(__file__).resolve().parents[1] / "llm_models.yaml"
+from dag_generator.config import Settings
 
 
-def load_default_models(path: Path = MODEL_CONFIG_PATH) -> dict[str, str]:
+def load_default_models(path: Path) -> dict[str, str]:
     try:
         config = yaml.safe_load(path.read_text())
     except FileNotFoundError as exc:
@@ -33,9 +32,6 @@ def load_default_models(path: Path = MODEL_CONFIG_PATH) -> dict[str, str]:
             "Model config must define non-empty default_model values for openrouter and anthropic."
         )
     return models
-
-
-DEFAULT_MODELS = load_default_models()
 
 
 @dataclass
@@ -60,20 +56,25 @@ class LLMProvider(Protocol):
     ) -> LLMResponse: ...
 
 
-def create_llm_provider(provider: str, model: str | None = None) -> LLMProvider:
-    if provider not in DEFAULT_MODELS:
+def create_llm_provider(
+    provider: str,
+    settings: Settings,
+    model: str | None = None,
+) -> LLMProvider:
+    default_models = load_default_models(settings.model_config_path)
+    if provider not in default_models:
         raise ValueError(f"Unsupported LLM provider: {provider}")
-    model = model or DEFAULT_MODELS[provider]
+    model = model or default_models[provider]
+    api_key = settings.api_key_for(provider)
+    if not api_key:
+        environment_name = (
+            "OPENROUTER_API_KEY" if provider == "openrouter" else "ANTHROPIC_API_KEY"
+        )
+        raise ValueError(f"{environment_name} environment variable is not set.")
 
     if provider == "openrouter":
-        api_key = os.environ.get("OPENROUTER_API_KEY")
-        if not api_key:
-            raise ValueError("OPENROUTER_API_KEY environment variable is not set.")
         return OpenRouterProvider(model, api_key)
 
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
-    if not api_key:
-        raise ValueError("ANTHROPIC_API_KEY environment variable is not set.")
     return AnthropicProvider(model, api_key)
 
 

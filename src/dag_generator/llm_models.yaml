@@ -1,3 +1,4 @@
+# Edit these defaults or set LLM_MODEL_CONFIG to another YAML file.
 openrouter:
   # Recommended options:
   # - openai/gpt-5.2                    # default: strongest tool-calling quality

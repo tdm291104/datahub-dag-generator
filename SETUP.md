@@ -97,7 +97,8 @@ python3 --version    # must show Python 3.11.x — NOT macOS's system Python 3.9
 make install
 ```
 
-This installs five direct packages:
+This installs the package in editable mode from `pyproject.toml` and uses
+`uv.lock` for reproducible dependency versions. The six direct dependencies are:
 
 | Package | Purpose |
 |---|---|
@@ -105,9 +106,11 @@ This installs five direct packages:
 | `openai` | OpenAI-compatible client used to call OpenRouter (default provider) |
 | `anthropic==0.120.2` | Optional direct Anthropic provider |
 | `PyYAML` | Reads the provider default-model configuration |
+| `python-dotenv` | Loads `.env` configuration automatically |
 | `mcp==2.0.0` | MCP Python client — connects to the DataHub MCP Server subprocess |
 
-**The DataHub MCP Server** (`mcp-server-datahub`) runs as a subprocess via `uvx` — no separate install needed. `uvx` ships with `uv` and downloads the package on first use (~30 seconds, cached afterward).
+**The DataHub MCP Server** runs as a pinned `mcp-server-datahub@0.6.0`
+subprocess via `uvx` — no separate install needed.
 
 ⚠️ **Common mistake**: installing just `uv pip install acryl-datahub` (without `[sqlalchemy]`) will later fail with:
 ```
@@ -135,12 +138,15 @@ Open `.env` and fill in your values:
 OPENROUTER_API_KEY=sk-or-v1-...      # default provider; get one at https://openrouter.ai/keys
 # ANTHROPIC_API_KEY=sk-ant-...       # optional, only for --provider anthropic
 DATAHUB_SERVER=http://localhost:8080  # default when running DataHub locally
+# DATAHUB_TOKEN=                      # optional, for authenticated/remote DataHub
 ```
 
-Default models are stored in `llm_models.yaml`. Change `openrouter.default_model` to test a
-different OpenRouter model without changing code; `--model` still overrides it for one command.
+Default models are stored in `src/dag_generator/llm_models.yaml`. Change
+`openrouter.default_model` to test a different model; `--model` still overrides
+it for one command. Set `LLM_MODEL_CONFIG` to load a separate YAML file.
 
-Load the variables into your current shell (do this in every new terminal session):
+`datahub-dag` loads `.env` automatically; variables already exported in your shell take priority.
+Load it manually only when another command needs these variables:
 ```bash
 set -a && source .env && set +a
 ```
@@ -241,15 +247,38 @@ Add lineage:
 python add_lineage.py --all
 ```
 
-Add tags and glossary terms — use `setup_demo_metadata.py` from the repo root, **not** the dataset's `add_metadata.py`. The original script emits one tag at a time, causing each emission to overwrite the previous. The fixed version collects all tags per table and emits them in one call:
+Add tags and glossary terms with the repository's demo command, **not** the
+dataset's `add_metadata.py`. The original script emits one tag at a time,
+causing each emission to overwrite the previous:
 ```bash
 cd -    # back to repo root
-python setup_demo_metadata.py
+make setup-demo-metadata
 ```
 
 Verify in the UI (http://localhost:9002): search `mart_daily_summary`, check the **Lineage** tab (should show raw_trips → staging_trips → mart_daily_summary) and the **Tags** panel (should show `daily_refresh`, `pipeline_stage`). The **Glossary** panel should show `Freshness SLA`, `Empty Load`, `Pipeline Stage`.
 
-## 10. What must NEVER be committed to git
+## 10. Generate a DAG
+
+Preview without creating a file or changing DataHub:
+
+```bash
+datahub-dag --target mart_daily_summary --instance nyc_taxi --dry-run
+```
+
+Generate `output/nyc_taxi_pipeline.py`:
+
+```bash
+datahub-dag --target mart_daily_summary --instance nyc_taxi
+```
+
+Write-back is disabled by default. Enable it explicitly only when the generated
+provenance should update DataHub:
+
+```bash
+datahub-dag --writeback --target mart_daily_summary --instance nyc_taxi
+```
+
+## 11. What must NEVER be committed to git
 
 `.gitignore` already includes the following lines — **do not remove them**:
 ```
@@ -259,6 +288,8 @@ __pycache__/
 .env
 .datahubenv
 data/
+output/
+*.egg-info/
 ```
 
 Before committing anything, always run `git status` and confirm `datahub-env/` and `data/` are NOT in the list of files staged for commit.
@@ -267,16 +298,16 @@ Before committing anything, always run `git status` and confirm `datahub-env/` a
 
 | Error | Cause | Fix |
 |---|---|---|
-| `ERROR: OPENROUTER_API_KEY is not set` | Missing default-provider key | Set `OPENROUTER_API_KEY` in `.env`, then run `set -a && source .env && set +a` |
+| `ERROR: OPENROUTER_API_KEY is not set` | Missing default-provider key | Set `OPENROUTER_API_KEY` in `.env`; it is loaded automatically |
 | `ERROR: ANTHROPIC_API_KEY is not set` | `--provider anthropic` without an Anthropic key | Set `ANTHROPIC_API_KEY` or omit `--provider anthropic` |
 | `NotOpenSSLWarning` when running `datahub version` | Using macOS system Python 3.9 (LibreSSL) | Recreate the venv with `uv venv --python 3.11` |
 | `datahub version` hangs with no output | The subcommand tries to reach the server; use `datahub --version` instead | Not a real error, safe to ignore |
 | `ModuleNotFoundError: No module named 'sqlalchemy'` | Installed `acryl-datahub` without the extra | `make install` |
 | `ModuleNotFoundError: No module named 'datahub_classify'` | Same cause — missing sqlalchemy extra | `make install` |
-| `ModuleNotFoundError: No module named 'mcp'` | Installed only DataHub, not full requirements | `make install` |
+| `ModuleNotFoundError: No module named 'mcp'` | Project dependencies were not installed | `make install` |
 | `uvx: command not found` | `uv` not installed or not on PATH | Install uv (step 1b) and open a new terminal |
 | MCP server takes 30s on first tool call | `uvx` downloading `mcp-server-datahub` for the first time | Normal — cached after first run |
 | `docker quickstart` reports insufficient disk space | Docker disk image nearly full (build cache) | `docker builder prune -a`, then raise the disk limit in Docker Desktop |
 | `Client-Server Incompatible` | CLI version differs from server version | Install the matching `acryl-datahub==<server_version>` |
 | Command hangs for a long time, logs full of `Retrying... track.datahubproject.io` | Telemetry trying to reach the network, blocked/timing out | `export DATAHUB_TELEMETRY_ENABLED=false` |
-| `mart_daily_summary` has no tags in DataHub UI | `add_metadata.py` overwrites tags one by one | Run `python setup_demo_metadata.py` from the repo root instead |
+| `mart_daily_summary` has no tags in DataHub UI | `add_metadata.py` overwrites tags one by one | Run `make setup-demo-metadata` from the repo root |

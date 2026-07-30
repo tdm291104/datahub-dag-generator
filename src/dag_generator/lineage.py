@@ -1,10 +1,13 @@
 """
-Build and topologically sort the lineage graph (Kahn's algorithm).
+Topologically sort the lineage graph (Kahn's algorithm).
 Returns nodes in execution order: upstream tables first, downstream last.
 """
 from __future__ import annotations
 
-from agent.datahub_client import DatasetNode
+from collections import defaultdict
+from heapq import heapify, heappop, heappush
+
+from dag_generator.models import DatasetNode
 
 
 def topological_sort(nodes: dict[str, DatasetNode]) -> list[DatasetNode]:
@@ -15,28 +18,30 @@ def topological_sort(nodes: dict[str, DatasetNode]) -> list[DatasetNode]:
     """
     # in_degree[urn] = number of upstream predecessors in this subgraph
     in_degree: dict[str, int] = {}
+    downstream: dict[str, list[str]] = defaultdict(list)
     for urn, node in nodes.items():
-        known_upstream_count = sum(1 for u in node.upstream_urns if u in nodes)
-        in_degree[urn] = known_upstream_count
+        known_upstreams = [upstream for upstream in node.upstream_urns if upstream in nodes]
+        in_degree[urn] = len(known_upstreams)
+        for upstream in known_upstreams:
+            downstream[upstream].append(urn)
 
     # Start with source tables (no known upstreams)
-    queue = sorted(
-        [urn for urn, deg in in_degree.items() if deg == 0],
-        key=lambda u: nodes[u].simple_name,
-    )
+    queue = [
+        (nodes[urn].simple_name, urn)
+        for urn, degree in in_degree.items()
+        if degree == 0
+    ]
+    heapify(queue)
 
     sorted_nodes: list[DatasetNode] = []
     while queue:
-        urn = queue.pop(0)
+        _, urn = heappop(queue)
         sorted_nodes.append(nodes[urn])
 
-        # Decrement in_degree for nodes that depend on this one
-        for candidate_urn, candidate_node in nodes.items():
-            if urn in candidate_node.upstream_urns:
-                in_degree[candidate_urn] -= 1
-                if in_degree[candidate_urn] == 0:
-                    queue.append(candidate_urn)
-                    queue.sort(key=lambda u: nodes[u].simple_name)
+        for downstream_urn in downstream[urn]:
+            in_degree[downstream_urn] -= 1
+            if in_degree[downstream_urn] == 0:
+                heappush(queue, (nodes[downstream_urn].simple_name, downstream_urn))
 
     if len(sorted_nodes) != len(nodes):
         raise ValueError(

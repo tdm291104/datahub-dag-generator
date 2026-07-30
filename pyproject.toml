@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "datahub-dag-generator"
+version = "0.1.0"
+description = "Generate Airflow DAGs from DataHub lineage and metadata"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+dependencies = [
+  "acryl-datahub[sqlalchemy]==1.5.0.6",
+  "anthropic==0.120.2",
+  "mcp==2.0.0",
+  "openai>=1.0,<3",
+  "python-dotenv>=1,<2",
+  "PyYAML>=6,<7",
+]
+
+[project.scripts]
+datahub-dag = "dag_generator.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+dag_generator = ["llm_models.yaml"]
