@@ -39,6 +39,7 @@ class Settings:
     max_agent_turns: int
     max_tool_result_chars: int
     max_lineage_nodes: int
+    dag_database_path_template: str
 
     def api_key_for(self, provider: str) -> str | None:
         if provider == "openrouter":
@@ -64,4 +65,8 @@ def load_settings(env_file: Path | None = None) -> Settings:
         max_agent_turns=_positive_int("MAX_AGENT_TURNS", 20),
         max_tool_result_chars=_positive_int("MAX_TOOL_RESULT_CHARS", 200_000),
         max_lineage_nodes=_positive_int("MAX_LINEAGE_NODES", 200),
+        dag_database_path_template=os.environ.get(
+            "DAG_DATABASE_PATH_TEMPLATE",
+            "/opt/airflow/demo-data/{instance}.db",
+        ),
     )

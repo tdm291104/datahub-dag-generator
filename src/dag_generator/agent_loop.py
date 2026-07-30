@@ -201,6 +201,9 @@ def _execute_custom_tool(
             target_table=target_table,
             platform_instance=platform_instance,
             quality_checks=checks,
+            database_path=settings.dag_database_path_template.replace(
+                "{instance}", platform_instance
+            ),
         )
         plan_urns = {node.urn for node in sorted_nodes}
         result = {

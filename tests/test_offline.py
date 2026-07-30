@@ -9,9 +9,15 @@ Run:
 """
 from __future__ import annotations
 
+import datetime
+import os
+from pathlib import Path
+import sqlite3
+import subprocess
 import sys
+import tempfile
 
-from dag_generator.airflow import render_dag
+from dag_generator.airflow import _freshness_command, render_dag
 from dag_generator.lineage import topological_sort
 from dag_generator.models import DatasetNode
 from dag_generator.policies import (
@@ -143,6 +149,47 @@ def test_dag_render_valid_python_syntax():
         raise AssertionError(f"Generated DAG has invalid Python syntax: {e}\n\n{dag}")
 
 
+def test_dag_targets_airflow_3_public_api():
+    sorted_nodes = topological_sort(MOCK_NODES)
+    dag = render_dag(
+        sorted_nodes,
+        dag_id="nyc_taxi_pipeline",
+        platform_instance="nyc_taxi",
+        target_table="mart_daily_summary",
+        database_path="/opt/airflow/demo-data/nyc_taxi.db",
+    )
+    assert "from airflow.sdk import DAG" in dag
+    assert "from airflow.providers.standard.operators.bash import BashOperator" in dag
+    assert "schedule='@daily'" in dag
+    assert "schedule_interval" not in dag
+    assert "/opt/airflow/demo-data/nyc_taxi.db" in dag
+    print("  PASS: Airflow 3 public API and mounted database path")
+
+
+def test_freshness_command_detects_available_timestamp_column():
+    with tempfile.TemporaryDirectory() as directory:
+        database = Path(directory) / "demo.db"
+        connection = sqlite3.connect(database)
+        connection.execute("CREATE TABLE raw_trips (tpep_pickup_datetime TEXT)")
+        connection.execute(
+            "INSERT INTO raw_trips VALUES (?)",
+            (datetime.datetime.now().isoformat(),),
+        )
+        connection.commit()
+        connection.close()
+        result = subprocess.run(
+            ["bash", "-c", _freshness_command("raw_trips", str(database))],
+            capture_output=True,
+            env={
+                **os.environ,
+                "PATH": f"{Path(sys.executable).parent}:{os.environ.get('PATH', '')}",
+            },
+            text=True,
+        )
+        assert result.returncode == 0, result.stderr or result.stdout
+    print("  PASS: freshness command detects an available timestamp column")
+
+
 def test_dag_render_stage_verbs():
     sorted_nodes = topological_sort(MOCK_NODES)
     dag = render_dag(sorted_nodes, dag_id="nyc_taxi_pipeline", platform_instance="nyc_taxi",
@@ -183,6 +230,8 @@ def run_all():
         test_dag_render_has_freshness_tasks,
         test_dag_render_dependency_wiring,
         test_dag_render_valid_python_syntax,
+        test_dag_targets_airflow_3_public_api,
+        test_freshness_command_detects_available_timestamp_column,
         test_dag_render_stage_verbs,
         test_metadata_quality_checks_are_deterministic,
     ]

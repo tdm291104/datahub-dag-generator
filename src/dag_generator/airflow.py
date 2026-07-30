@@ -46,30 +46,39 @@ def _comment(value: str) -> str:
     return " ".join(value.splitlines())
 
 
-def _freshness_command(table: str, platform_instance: str) -> str:
-    database = f"/path/to/{_identifier(platform_instance)}.db"
-    query = f'SELECT MAX(trip_date) FROM "{table.replace(chr(34), chr(34) * 2)}"'
+def _freshness_command(table: str, database: str) -> str:
+    quoted_table = table.replace('"', '""')
     return (
         "python - <<'PY'\n"
         "import datetime\n"
         "import sqlite3\n"
         "import sys\n"
         f"connection = sqlite3.connect({database!r})\n"
-        f"row = connection.execute({query!r}).fetchone()\n"
+        f"table = {table!r}\n"
+        f"quoted_table = {quoted_table!r}\n"
+        "columns = {row[1] for row in connection.execute(f'PRAGMA table_info(\"{quoted_table}\")')}\n"
+        "candidates = ('trip_date', 'tpep_pickup_datetime', 'event_time', 'updated_at', 'created_at')\n"
+        "timestamp_column = next((column for column in candidates if column in columns), None)\n"
+        "if timestamp_column is None:\n"
+        "    print(f'No supported freshness column found in {table}: {sorted(columns)}')\n"
+        "    connection.close()\n"
+        "    sys.exit(2)\n"
+        "query = f'SELECT MAX(\"{timestamp_column}\") FROM \"{quoted_table}\"'\n"
+        "row = connection.execute(query).fetchone()\n"
         "connection.close()\n"
         "latest = row[0] if row else None\n"
-        f"print({f'Latest record in {table}:'!r}, latest)\n"
-        "days = (datetime.date.today() - datetime.date.fromisoformat(latest)).days if latest else 999\n"
+        "print(f'Latest record in {table}:', latest)\n"
+        "latest_date = datetime.datetime.fromisoformat(str(latest).replace('Z', '+00:00')).date() if latest else None\n"
+        "days = (datetime.date.today() - latest_date).days if latest_date else 999\n"
         "sys.exit(0 if days <= 1 else 1)\n"
         "PY"
     )
 
 
-def _quality_command(kind: str, table: str, platform_instance: str) -> str:
+def _quality_command(kind: str, table: str, database: str) -> str:
     if kind == "pii_audit":
         return f"printf '%s\\n' {shlex.quote(f'Audit log: PII access for {table}')}"
 
-    database = f"/path/to/{_identifier(platform_instance)}.db"
     query = f'SELECT COUNT(*) FROM "{table.replace(chr(34), chr(34) * 2)}"'
     return (
         "python - <<'PY'\n"
@@ -92,6 +101,7 @@ def render_dag(
     target_table: str = "",
     platform_instance: str = "",
     quality_checks: list[QualityCheck] | None = None,
+    database_path: str = "/opt/airflow/demo-data/data.db",
 ) -> str:
     """Return Airflow DAG Python source; reject invalid quality-check plans."""
     if not sorted_nodes:
@@ -134,10 +144,10 @@ def render_dag(
         "# DO NOT EDIT MANUALLY — regenerate with:",
         f"#   {regen_command}",
         "",
-        "from datetime import datetime, timedelta",
+        "from datetime import datetime, timedelta, timezone",
         "",
-        "from airflow import DAG",
-        "from airflow.operators.bash import BashOperator",
+        "from airflow.providers.standard.operators.bash import BashOperator",
+        "from airflow.sdk import DAG",
         "",
         "default_args = {",
         f"    'owner': {owner!r},",
@@ -150,8 +160,8 @@ def render_dag(
         "with DAG(",
         f"    dag_id={dag_id!r},",
         "    default_args=default_args,",
-        f"    schedule_interval={schedule!r},",
-        "    start_date=datetime(2024, 1, 1),",
+        f"    schedule={schedule!r},",
+        "    start_date=datetime(2024, 1, 1, tzinfo=timezone.utc),",
         "    catchup=False,",
         f"    tags={['generated_by_datahub_agent', platform_instance]!r},",
         ") as dag:",
@@ -190,7 +200,7 @@ def render_dag(
                 f"    # Freshness gate: {_comment(freshness_reason(node))}",
                 f"    {freshness_id} = BashOperator(",
                 f"        task_id={freshness_id!r},",
-                f"        bash_command={_freshness_command(node.simple_name, platform_instance)!r},",
+                f"        bash_command={_freshness_command(node.simple_name, database_path)!r},",
                 f"        doc_md={'Freshness gate for ' + node.simple_name!r},",
                 "    )",
             ]
@@ -203,7 +213,7 @@ def render_dag(
                 "",
                 f"    {check_id} = BashOperator(",
                 f"        task_id={check_id!r},",
-                f"        bash_command={_quality_command(check.kind, node.simple_name, platform_instance)!r},",
+                f"        bash_command={_quality_command(check.kind, node.simple_name, database_path)!r},",
                 f"        doc_md={'Metadata policy: ' + check.kind!r},",
                 "    )",
             ]

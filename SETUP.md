@@ -278,7 +278,31 @@ provenance should update DataHub:
 datahub-dag --writeback --target mart_daily_summary --instance nyc_taxi
 ```
 
-## 11. What must NEVER be committed to git
+## 11. View the generated DAG in Airflow
+
+Start the local Airflow 3 standalone container:
+
+```bash
+make airflow-start
+```
+
+Open **http://localhost:8081**. No login is required: authentication is disabled
+only for this localhost-bound development container. The generated `output/`
+directory is mounted read-only into Airflow, and the nyc-taxi SQLite directory
+is mounted at `/opt/airflow/demo-data`.
+
+Useful commands:
+
+```bash
+make airflow-status
+make airflow-logs
+make airflow-stop
+```
+
+`make airflow-stop` preserves Airflow's Docker volume and run history. This
+standalone setup is for demos/development, not production.
+
+## 12. What must NEVER be committed to git
 
 `.gitignore` already includes the following lines — **do not remove them**:
 ```
@@ -286,10 +310,15 @@ datahub-env/
 __pycache__/
 *.pyc
 .env
+.env.*
+!.env.example
 .datahubenv
 data/
 output/
 *.egg-info/
+build/
+dist/
+.DS_Store
 ```
 
 Before committing anything, always run `git status` and confirm `datahub-env/` and `data/` are NOT in the list of files staged for commit.
@@ -311,3 +340,5 @@ Before committing anything, always run `git status` and confirm `datahub-env/` a
 | `Client-Server Incompatible` | CLI version differs from server version | Install the matching `acryl-datahub==<server_version>` |
 | Command hangs for a long time, logs full of `Retrying... track.datahubproject.io` | Telemetry trying to reach the network, blocked/timing out | `export DATAHUB_TELEMETRY_ENABLED=false` |
 | `mart_daily_summary` has no tags in DataHub UI | `add_metadata.py` overwrites tags one by one | Run `make setup-demo-metadata` from the repo root |
+| DAG is not visible in Airflow | No generated file or Airflow is still starting | Generate the DAG, then run `make airflow-status` and `make airflow-logs` |
+| Port `8081` is already in use | Another local service uses the Airflow UI port | Run `make airflow-start AIRFLOW_UI_PORT=8082` |

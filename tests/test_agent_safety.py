@@ -110,6 +110,7 @@ def test_writeback_is_limited_to_rendered_urns():
         max_agent_turns=2,
         max_tool_result_chars=100,
         max_lineage_nodes=10,
+        dag_database_path_template="/opt/airflow/demo-data/{instance}.db",
     )
     client = FakeClient()
     plan = {

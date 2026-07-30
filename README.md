@@ -4,9 +4,9 @@ Generates an Airflow DAG skeleton from lineage and metadata stored in DataHub.
 Agent mode uses DataHub MCP plus an LLM; script mode runs the same core renderer
 without an LLM.
 
-The generated processing tasks are placeholders. Replace their `echo` commands
-and `/path/to/*.db` paths with real SQL, dbt, Spark, or Python ETL commands
-before running the DAG in production.
+The generated processing tasks are placeholders. Replace their `printf`
+commands with real SQL, dbt, Spark, or Python ETL commands before production.
+The local Airflow stack mounts the nyc-taxi SQLite files for demo checks.
 
 ## Flow
 
@@ -53,6 +53,7 @@ scripts/
   setup_demo_metadata.py
 tests/
 generate_dag.py   backward-compatible wrapper
+docker-compose.airflow.yml
 ```
 
 ## Setup
@@ -107,6 +108,28 @@ The previous invocation remains available after `make install`:
 python generate_dag.py --target mart_daily_summary --instance nyc_taxi
 ```
 
+## Airflow UI
+
+Generate a DAG first, then start the optional local Airflow 3 stack:
+
+```bash
+datahub-dag --target mart_daily_summary --instance nyc_taxi
+make airflow-start
+```
+
+Open `http://localhost:8081`. Authentication is disabled for this localhost-only
+development container. Generated files under `output/` are mounted read-only as
+Airflow's DAG folder, so regenerated DAGs appear automatically.
+
+```bash
+make airflow-status
+make airflow-logs
+make airflow-stop
+```
+
+Airflow state is stored in a Docker volume and survives `make airflow-stop`.
+This standalone setup is for local demos, not production.
+
 ## Configuration
 
 Default models are editable in `src/dag_generator/llm_models.yaml`.
@@ -126,6 +149,7 @@ Command-line `--model` overrides the configured model for one run. Set
 | `MAX_AGENT_TURNS` | `20` | Agent cost/runaway limit |
 | `MAX_TOOL_RESULT_CHARS` | `200000` | Per-tool context limit |
 | `MAX_LINEAGE_NODES` | `200` | Maximum rendered lineage size |
+| `DAG_DATABASE_PATH_TEMPLATE` | `/opt/airflow/demo-data/{instance}.db` | Database path visible inside Airflow |
 
 ## Verification
 

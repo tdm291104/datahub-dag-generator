@@ -124,6 +124,9 @@ def _run_script(
         target_table=target_table,
         platform_instance=args.instance,
         quality_checks=recommended_quality_checks(sorted_nodes),
+        database_path=settings.dag_database_path_template.replace(
+            "{instance}", args.instance
+        ),
     )
 
     if args.writeback and not args.dry_run:
