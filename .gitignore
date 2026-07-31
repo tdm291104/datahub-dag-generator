@@ -6,7 +6,6 @@ __pycache__/
 !.env.example
 .datahubenv
 data/
-output/
 *.egg-info/
 build/
 dist/

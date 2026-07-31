@@ -48,7 +48,7 @@ status-datahub:
 	docker compose -p datahub -f "$(DATAHUB_COMPOSE)" --profile quickstart ps
 
 airflow-start:
-	@mkdir -p output
+	@mkdir -p dags
 	AIRFLOW_UI_PORT="$(AIRFLOW_UI_PORT)" docker compose -p "$(AIRFLOW_PROJECT)" -f "$(AIRFLOW_COMPOSE)" up -d
 	@printf '%s\n' "Airflow is starting at http://localhost:$(AIRFLOW_UI_PORT)"
 

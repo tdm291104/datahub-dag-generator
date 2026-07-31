@@ -11,7 +11,7 @@ services:
       AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_ALL_ADMINS: "true"
     volumes:
       - airflow-state:/opt/airflow
-      - ./output:/opt/airflow/dags:ro
+      - ./dags:/opt/airflow/dags:ro
       - ./data/static-assets/datasets/nyc-taxi:/opt/airflow/demo-data:ro
 
 volumes:

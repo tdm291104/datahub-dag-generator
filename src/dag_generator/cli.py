@@ -25,7 +25,7 @@ def parse_args(settings: Settings) -> argparse.Namespace:
     parser.add_argument("--instance", default="nyc_taxi", metavar="INSTANCE")
     parser.add_argument("--dag-id", metavar="DAG_ID")
     parser.add_argument("--schedule", default="@daily")
-    parser.add_argument("--output", default="output", metavar="DIR")
+    parser.add_argument("--output", default="dags", metavar="DIR")
     parser.add_argument(
         "--server",
         default=settings.datahub_server,
