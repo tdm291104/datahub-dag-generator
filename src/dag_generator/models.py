@@ -19,3 +19,10 @@ class DatasetNode:
 class QualityCheck:
     kind: str
     after_urn: str
+
+
+@dataclass
+class GenerationResult:
+    dag_source: str
+    sorted_nodes: list[DatasetNode]
+    quality_checks: list[QualityCheck]

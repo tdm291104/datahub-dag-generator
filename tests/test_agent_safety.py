@@ -125,7 +125,7 @@ def test_writeback_is_limited_to_rendered_urns():
         ],
         "quality_checks": [],
     }
-    _, _, rendered_urns = _execute_custom_tool(
+    _, _, rendered_urns, _, _ = _execute_custom_tool(
         "render_airflow_dag",
         plan,
         client,
@@ -159,10 +159,13 @@ def test_writeback_is_limited_to_rendered_urns():
 
 
 def test_dag_id_cannot_escape_output_directory():
+    from dag_generator.models import GenerationResult
+
     with tempfile.TemporaryDirectory() as directory:
         args = argparse.Namespace(dry_run=False, output=directory)
+        fake_result = GenerationResult(dag_source="source", sorted_nodes=[], quality_checks=[])
         try:
-            _emit_result("source", args, "../outside")
+            _emit_result(fake_result, args, "../outside")
             raise AssertionError("Path traversal DAG ID should be rejected")
         except ValueError as exc:
             assert "path separators" in str(exc)

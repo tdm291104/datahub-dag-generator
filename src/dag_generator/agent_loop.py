@@ -14,7 +14,7 @@ from dag_generator.datahub import DataHubClient
 from dag_generator.lineage import topological_sort
 from dag_generator.llm import LLMProvider, create_llm_provider
 from dag_generator.mcp import build_llm_tools, call_tool_async
-from dag_generator.models import DatasetNode, QualityCheck
+from dag_generator.models import DatasetNode, GenerationResult, QualityCheck
 
 CUSTOM_TOOLS: list[dict[str, Any]] = [
     {
@@ -191,7 +191,7 @@ def _execute_custom_tool(
     writeback: bool,
     dry_run: bool,
     rendered_urns: set[str] | None,
-) -> tuple[str, str | None, set[str] | None]:
+) -> tuple[str, str | None, set[str] | None, list[DatasetNode] | None, list[QualityCheck] | None]:
     if tool_name == "render_airflow_dag":
         sorted_nodes, checks = _parse_plan(tool_input, settings.max_lineage_nodes)
         dag_source = render_dag(
@@ -211,7 +211,7 @@ def _execute_custom_tool(
             "nodes": [node.simple_name for node in sorted_nodes],
             "quality_checks_added": len(checks),
         }
-        return json.dumps(result), dag_source, plan_urns
+        return json.dumps(result), dag_source, plan_urns, sorted_nodes, checks
 
     if tool_name == "datahub_write_back":
         if dry_run or not writeback:
@@ -219,6 +219,8 @@ def _execute_custom_tool(
                 json.dumps({"status": "skipped", "reason": "write-back is disabled"}),
                 None,
                 rendered_urns,
+                None,
+                None,
             )
         if rendered_urns is None:
             raise ValueError("Render the DAG before requesting write-back")
@@ -231,6 +233,8 @@ def _execute_custom_tool(
             json.dumps({"status": "ok", "tagged_count": len(requested_urns)}),
             None,
             rendered_urns,
+            None,
+            None,
         )
 
     raise ValueError(f"Unknown custom tool: {tool_name}")
@@ -292,6 +296,8 @@ async def _agent_loop_async(
             ]
             rendered_dag: str | None = None
             rendered_urns: set[str] | None = None
+            rendered_nodes: list[DatasetNode] | None = None
+            rendered_checks: list[QualityCheck] | None = None
 
             for _turn in range(settings.max_agent_turns):
                 llm_response = llm.complete(SYSTEM_PROMPT, tools, messages)
@@ -322,7 +328,7 @@ async def _agent_loop_async(
                                 result, settings.max_tool_result_chars
                             )
                         else:
-                            result, maybe_dag, maybe_urns = _execute_custom_tool(
+                            result, maybe_dag, maybe_urns, maybe_nodes, maybe_checks = _execute_custom_tool(
                                 tool_name=call.name,
                                 tool_input=call.input,
                                 client=client,
@@ -338,6 +344,10 @@ async def _agent_loop_async(
                             if maybe_dag is not None:
                                 rendered_dag = maybe_dag
                             rendered_urns = maybe_urns
+                            if maybe_nodes is not None:
+                                rendered_nodes = maybe_nodes
+                            if maybe_checks is not None:
+                                rendered_checks = maybe_checks
                     except (KeyError, TypeError, ValueError) as exc:
                         result = json.dumps({"error": str(exc)})
                     tool_results.append(
@@ -349,9 +359,13 @@ async def _agent_loop_async(
                     f"Agent exceeded MAX_AGENT_TURNS={settings.max_agent_turns}"
                 )
 
-    if rendered_dag is None:
+    if rendered_dag is None or rendered_nodes is None:
         raise RuntimeError("Agent finished without rendering a valid DAG")
-    return rendered_dag
+    return GenerationResult(
+        dag_source=rendered_dag,
+        sorted_nodes=rendered_nodes,
+        quality_checks=rendered_checks or [],
+    )
 
 
 def run_dag_agent(
@@ -365,8 +379,8 @@ def run_dag_agent(
     provider: str = "openrouter",
     model: str | None = None,
     settings: Settings | None = None,
-) -> str:
-    """Run the bounded DataHub DAG agent and return generated Python source."""
+) -> GenerationResult:
+    """Run the bounded DataHub DAG agent and return a GenerationResult."""
     settings = settings or load_settings()
     dag_id = dag_id or f"{platform_instance}_pipeline"
 
