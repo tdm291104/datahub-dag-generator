@@ -7,7 +7,7 @@ from pathlib import Path
 
 from dag_generator.airflow import render_dag
 from dag_generator.config import Settings, load_settings
-from dag_generator.datahub import DataHubClient
+from dag_generator.datahub import DataHubClient, _urn_to_table_name
 from dag_generator.lineage import topological_sort
 from dag_generator.policies import recommended_quality_checks
 
@@ -97,7 +97,7 @@ def _run_script(
     client = DataHubClient(settings.datahub_server, settings.datahub_token)
     if args.urn:
         root_urn = args.urn
-        target_table = root_urn.split(".")[-2] if "." in root_urn else "unknown"
+        target_table = _urn_to_table_name(root_urn)
     else:
         print(f"[1/4] Searching for {args.target!r} in {args.instance!r}...")
         root_urn = client.find_urn(args.target, args.instance)
