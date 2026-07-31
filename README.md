@@ -1,54 +1,62 @@
 # DataHub DAG Generator
 
-Generates an Airflow DAG skeleton from lineage and metadata stored in DataHub.
-Agent mode uses DataHub MCP plus an LLM; script mode runs the same core renderer
-without an LLM.
+Generates a production-ready Airflow DAG from lineage and metadata stored in
+DataHub. The agent reads the real lineage graph, tags, and glossary terms via
+the **DataHub MCP Server**, then renders a structured DAG that your data team
+can review and merge — no hand-editing required.
 
-The generated processing tasks are placeholders. Replace their `printf`
-commands with real SQL, dbt, Spark, or Python ETL commands before production.
-The local Airflow stack mounts the nyc-taxi SQLite files for demo checks.
+A sample generated DAG is committed at [`dags/nyc_taxi_pipeline.py`](dags/nyc_taxi_pipeline.py).
 
-## Flow
+## How it works
 
 ```text
-CLI
- ├─ agent mode  → OpenRouter/Anthropic → DataHub MCP
- └─ script mode → DataHub Python SDK
-                        │
-                        ▼
-              validated generation plan
-                        │
-                        ▼
-              deterministic DAG renderer
-                        │
-                        ├─ output/<dag_id>.py
-                        └─ optional DataHub write-back
+datahub-dag --target mart_daily_summary --instance nyc_taxi --pr
+         │
+         ▼
+   DataHub MCP Server  (mcp-server-datahub via uvx)
+   ├─ search           → find dataset URN
+   ├─ get_lineage      → BFS upstream traversal
+   └─ get_entities     → tags + glossary terms for all nodes
+         │
+         ▼
+   LLM agent  (OpenRouter or Anthropic)
+   ├─ maps tags/glossary → freshness gates + quality checks
+   └─ calls render_airflow_dag with the full validated plan
+         │
+         ▼
+   Deterministic renderer  (no LLM in the loop)
+   ├─ topological sort from lineage
+   ├─ ingest / transform / aggregate task verbs
+   ├─ freshness_check_<table>  from daily_refresh / FreshnessSLA
+   ├─ data_audit_<table>       from pii tag
+   ├─ validate_row_count_<table> from EmptyLoad glossary term
+   └─ dependency wiring from DataHub lineage edges
+         │
+         ├─► dags/<dag_id>.py          (saved locally)
+         ├─► DataHub write-back        (--writeback, optional)
+         └─► GitHub PR                 (--pr, optional)
 ```
 
-The renderer derives freshness gates from `daily_refresh`, `hourly_refresh`,
-`weekly_refresh`, or freshness glossary terms. It only accepts predefined
-LLM-planned checks:
-
-- `row_count` for Empty Load metadata
-- `pii_audit` for PII metadata
-
-The LLM cannot provide arbitrary shell commands. DAG ID, schedule, output
-location, write-back, and executable templates stay under application control.
+The LLM cannot inject arbitrary shell commands. DAG ID, schedule, output
+location, write-back, and all executable templates are under application
+control.
 
 ## Project structure
 
 ```text
+dags/
+  nyc_taxi_pipeline.py   sample generated DAG (committed for reference)
 src/dag_generator/
-  cli.py          command-line interface
-  config.py       .env and runtime limits
+  cli.py          command-line entry point
+  config.py       .env loading and runtime limits
   models.py       provider-independent data contracts
   datahub.py      DataHub SDK queries and write-back
-  mcp.py          DataHub MCP bridge
+  mcp.py          DataHub MCP bridge (mcp-server-datahub)
   llm.py          OpenRouter and Anthropic adapters
   agent_loop.py   bounded agent orchestration
-  lineage.py      topological sorting
+  lineage.py      topological sorting (Kahn's algorithm)
   policies.py     metadata-driven quality rules
-  airflow.py      deterministic Airflow renderer
+  airflow.py      deterministic Airflow 3 renderer
 scripts/
   setup_demo_metadata.py
 tests/
@@ -67,8 +75,8 @@ cp .env.example .env
 make start
 ```
 
-See [SETUP.md](./SETUP.md) for DataHub quickstart and the nyc-taxi demo dataset.
-After ingesting the demo data:
+See [SETUP.md](./SETUP.md) for the full DataHub quickstart and nyc-taxi demo
+dataset. After ingesting the demo data:
 
 ```bash
 make setup-demo-metadata
@@ -77,49 +85,64 @@ make setup-demo-metadata
 ## Usage
 
 ```bash
-# Agent mode: OpenRouter + configured default model
-datahub-dag --target mart_daily_summary --instance nyc_taxi
+# Generate DAG and open a GitHub PR — the full end-to-end workflow
+datahub-dag --target mart_daily_summary --instance nyc_taxi --pr
 
-# Preview only
+# Preview the DAG without writing anything
 datahub-dag --target mart_daily_summary --instance nyc_taxi --dry-run
 
-# Deterministic mode without an LLM
+# Save to dags/ locally (no PR)
+datahub-dag --target mart_daily_summary --instance nyc_taxi
+
+# Different base branch for the PR
+datahub-dag --target mart_daily_summary --instance nyc_taxi --pr --pr-base develop
+
+# Deterministic mode — no LLM, uses DataHub Python SDK directly
 datahub-dag --mode script --target mart_daily_summary --instance nyc_taxi
 
-# One-run model override through OpenRouter
+# Override the model for one run (any OpenRouter model ID)
 datahub-dag --model deepseek/deepseek-v4-flash \
   --target mart_daily_summary --instance nyc_taxi
 
-# Direct Anthropic provider
+# Use Anthropic directly instead of OpenRouter
 datahub-dag --provider anthropic \
   --target mart_daily_summary --instance nyc_taxi
 
-# Explicitly allow provenance updates in DataHub
-datahub-dag --writeback \
-  --target mart_daily_summary --instance nyc_taxi
+# Write DAG provenance back to DataHub after rendering
+datahub-dag --writeback --target mart_daily_summary --instance nyc_taxi
 ```
 
-Write-back is disabled by default. `--dry-run` never creates a file or changes
-DataHub metadata, even when `--writeback` is also present.
+`--dry-run` never writes a file or changes DataHub metadata.
+`--writeback` is disabled by default; it adds a `dag_managed` tag and a note
+to the editable description of each dataset in the rendered plan.
 
-The previous invocation remains available after `make install`:
+### PR workflow
 
-```bash
-python generate_dag.py --target mart_daily_summary --instance nyc_taxi
-```
+`--pr` requires `git` and the [GitHub CLI (`gh`)](https://cli.github.com/)
+on PATH and authenticated. It:
+
+1. Creates branch `datahub-dag/<dag_id>`
+2. Writes `dags/<dag_id>.py`
+3. Commits and pushes the branch
+4. Opens a PR against `--pr-base` (default `main`) with a description table
+   showing which metadata signal drove which tasks
+
+The PR description lists every stage, its upstream, and which tags or glossary
+terms triggered which checks — so reviewers can verify the agent's reasoning
+without reading the DAG source.
 
 ## Airflow UI
 
-Generate a DAG first, then start the optional local Airflow 3 stack:
+Generate a DAG first, then start the local Airflow 3 stack:
 
 ```bash
 datahub-dag --target mart_daily_summary --instance nyc_taxi
 make airflow-start
 ```
 
-Open `http://localhost:8081`. Authentication is disabled for this localhost-only
-development container. Generated files under `output/` are mounted read-only as
-Airflow's DAG folder, so regenerated DAGs appear automatically.
+Open `http://localhost:8081`. Authentication is disabled for this
+localhost-only development container. The `dags/` directory is mounted
+read-only so regenerated DAGs appear automatically without restarting.
 
 ```bash
 make airflow-status
@@ -128,32 +151,33 @@ make airflow-stop
 ```
 
 Airflow state is stored in a Docker volume and survives `make airflow-stop`.
-This standalone setup is for local demos, not production.
+This standalone stack is for local demos, not production.
 
 ## Configuration
 
-Default models are editable in `src/dag_generator/llm_models.yaml`.
-Command-line `--model` overrides the configured model for one run. Set
-`LLM_MODEL_CONFIG` to load another YAML file without modifying the package.
+Default models live in `src/dag_generator/llm_models.yaml`. `--model`
+overrides the configured default for one run. Set `LLM_MODEL_CONFIG` to point
+at a different YAML file without modifying the package.
 
-`.env` is loaded automatically; an already-exported shell variable has priority.
+`.env` is loaded automatically; a variable already exported in the shell takes
+priority over the file value.
 
 | Variable | Default | Purpose |
 |---|---|---|
 | `DATAHUB_SERVER` | `http://localhost:8080` | DataHub GMS API |
 | `DATAHUB_TOKEN` | empty | Remote/authenticated DataHub |
 | `OPENROUTER_API_KEY` | empty | Default LLM provider |
-| `ANTHROPIC_API_KEY` | empty | Direct Anthropic option |
+| `ANTHROPIC_API_KEY` | empty | Direct Anthropic option (`--provider anthropic`) |
 | `LLM_MODEL_CONFIG` | packaged YAML | Optional model-config path |
-| `DATAHUB_MCP_PACKAGE` | `mcp-server-datahub@0.6.0` | Pinned MCP server |
-| `MAX_AGENT_TURNS` | `20` | Agent cost/runaway limit |
+| `DATAHUB_MCP_PACKAGE` | `mcp-server-datahub@0.6.0` | Pinned MCP server package |
+| `MAX_AGENT_TURNS` | `20` | Agent cost/runaway guard |
 | `MAX_TOOL_RESULT_CHARS` | `200000` | Per-tool context limit |
 | `MAX_LINEAGE_NODES` | `200` | Maximum rendered lineage size |
-| `DAG_DATABASE_PATH_TEMPLATE` | `/opt/airflow/demo-data/{instance}.db` | Database path visible inside Airflow |
+| `DAG_DATABASE_PATH_TEMPLATE` | `/opt/airflow/demo-data/{instance}.db` | SQLite path inside Airflow container |
 
 ## Verification
 
 ```bash
-make test   # offline unit checks
-make check  # tests plus Python syntax checks
+make test   # 24 offline unit checks — no DataHub or LLM required
+make check  # tests + Python syntax check across the whole package
 ```
