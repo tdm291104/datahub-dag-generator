@@ -9,7 +9,6 @@ Run:
 """
 from __future__ import annotations
 
-import datetime
 import os
 from pathlib import Path
 import sqlite3
@@ -119,6 +118,12 @@ def test_dag_render_has_freshness_tasks():
         assert f"freshness_check_{table}" in dag, (
             f"freshness_check_{table} not found in DAG — all 3 tables have daily_refresh"
         )
+    expected = _freshness_command(
+        "staging_trips",
+        "/opt/airflow/demo-data/data.db",
+        ["raw_trips"],
+    )
+    assert f"bash_command={expected!r}" in dag
     print("  PASS: freshness_check tasks present for all tables")
 
 
@@ -166,28 +171,53 @@ def test_dag_targets_airflow_3_public_api():
     print("  PASS: Airflow 3 public API and mounted database path")
 
 
-def test_freshness_command_detects_available_timestamp_column():
+def test_freshness_command_compares_downstream_with_upstream():
     with tempfile.TemporaryDirectory() as directory:
         database = Path(directory) / "demo.db"
         connection = sqlite3.connect(database)
         connection.execute("CREATE TABLE raw_trips (tpep_pickup_datetime TEXT)")
+        connection.execute("CREATE TABLE staging_trips (trip_date TEXT)")
         connection.execute(
             "INSERT INTO raw_trips VALUES (?)",
-            (datetime.datetime.now().isoformat(),),
+            ("2016-03-10",),
         )
+        connection.execute("INSERT INTO staging_trips VALUES ('2016-03-10')")
         connection.commit()
         connection.close()
-        result = subprocess.run(
-            ["bash", "-c", _freshness_command("raw_trips", str(database))],
+
+        environment = {
+            **os.environ,
+            "PATH": f"{Path(sys.executable).parent}:{os.environ.get('PATH', '')}",
+        }
+        healthy = subprocess.run(
+            [
+                "bash",
+                "-c",
+                _freshness_command("staging_trips", str(database), ["raw_trips"]),
+            ],
             capture_output=True,
-            env={
-                **os.environ,
-                "PATH": f"{Path(sys.executable).parent}:{os.environ.get('PATH', '')}",
-            },
+            env=environment,
             text=True,
         )
-        assert result.returncode == 0, result.stderr or result.stdout
-    print("  PASS: freshness command detects an available timestamp column")
+        assert healthy.returncode == 0, healthy.stderr or healthy.stdout
+
+        connection = sqlite3.connect(database)
+        connection.execute("UPDATE staging_trips SET trip_date = '2016-03-01'")
+        connection.commit()
+        connection.close()
+        stale = subprocess.run(
+            [
+                "bash",
+                "-c",
+                _freshness_command("staging_trips", str(database), ["raw_trips"]),
+            ],
+            capture_output=True,
+            env=environment,
+            text=True,
+        )
+        assert stale.returncode == 1, stale.stderr or stale.stdout
+        assert "Downstream lag in days: 9" in stale.stdout
+    print("  PASS: freshness compares downstream with direct upstream")
 
 
 def test_dag_render_stage_verbs():
@@ -231,7 +261,7 @@ def run_all():
         test_dag_render_dependency_wiring,
         test_dag_render_valid_python_syntax,
         test_dag_targets_airflow_3_public_api,
-        test_freshness_command_detects_available_timestamp_column,
+        test_freshness_command_compares_downstream_with_upstream,
         test_dag_render_stage_verbs,
         test_metadata_quality_checks_are_deterministic,
     ]

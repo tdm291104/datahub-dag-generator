@@ -46,8 +46,14 @@ def _comment(value: str) -> str:
     return " ".join(value.splitlines())
 
 
-def _freshness_command(table: str, database: str) -> str:
-    quoted_table = table.replace('"', '""')
+def _freshness_command(
+    table: str,
+    database: str,
+    upstream_tables: list[str] | None = None,
+) -> str:
+    # ponytail: roots define the relative baseline; add SLA-aware wall-clock checks
+    # when DataHub provides explicit freshness thresholds.
+    upstream_tables = upstream_tables or []
     return (
         "python - <<'PY'\n"
         "import datetime\n"
@@ -55,22 +61,36 @@ def _freshness_command(table: str, database: str) -> str:
         "import sys\n"
         f"connection = sqlite3.connect({database!r})\n"
         f"table = {table!r}\n"
-        f"quoted_table = {quoted_table!r}\n"
-        "columns = {row[1] for row in connection.execute(f'PRAGMA table_info(\"{quoted_table}\")')}\n"
+        f"upstream_tables = {tuple(upstream_tables)!r}\n"
         "candidates = ('trip_date', 'tpep_pickup_datetime', 'event_time', 'updated_at', 'created_at')\n"
-        "timestamp_column = next((column for column in candidates if column in columns), None)\n"
-        "if timestamp_column is None:\n"
-        "    print(f'No supported freshness column found in {table}: {sorted(columns)}')\n"
+        "def latest_date(table_name):\n"
+        "    quoted_table = table_name.replace('\"', '\"\"')\n"
+        "    columns = {row[1] for row in connection.execute(f'PRAGMA table_info(\"{quoted_table}\")')}\n"
+        "    timestamp_column = next((column for column in candidates if column in columns), None)\n"
+        "    if timestamp_column is None:\n"
+        "        raise ValueError(f'No supported freshness column found in {table_name}: {sorted(columns)}')\n"
+        "    query = f'SELECT MAX(\"{timestamp_column}\") FROM \"{quoted_table}\"'\n"
+        "    row = connection.execute(query).fetchone()\n"
+        "    latest = row[0] if row else None\n"
+        "    if latest is None:\n"
+        "        raise ValueError(f'No timestamped records found in {table_name}')\n"
+        "    return datetime.datetime.fromisoformat(str(latest).replace('Z', '+00:00')).date()\n"
+        "try:\n"
+        "    downstream_latest = latest_date(table)\n"
+        "    upstream_latest = max((latest_date(name) for name in upstream_tables), default=None)\n"
+        "except (TypeError, ValueError) as exc:\n"
         "    connection.close()\n"
+        "    print(exc)\n"
         "    sys.exit(2)\n"
-        "query = f'SELECT MAX(\"{timestamp_column}\") FROM \"{quoted_table}\"'\n"
-        "row = connection.execute(query).fetchone()\n"
         "connection.close()\n"
-        "latest = row[0] if row else None\n"
-        "print(f'Latest record in {table}:', latest)\n"
-        "latest_date = datetime.datetime.fromisoformat(str(latest).replace('Z', '+00:00')).date() if latest else None\n"
-        "days = (datetime.date.today() - latest_date).days if latest_date else 999\n"
-        "sys.exit(0 if days <= 1 else 1)\n"
+        "print(f'Latest record in {table}:', downstream_latest)\n"
+        "if upstream_latest is None:\n"
+        "    print('Root dataset establishes the freshness baseline')\n"
+        "    sys.exit(0)\n"
+        "lag_days = (upstream_latest - downstream_latest).days\n"
+        "print('Latest direct upstream record:', upstream_latest)\n"
+        "print('Downstream lag in days:', max(lag_days, 0))\n"
+        "sys.exit(0 if lag_days <= 0 else 1)\n"
         "PY"
     )
 
@@ -195,12 +215,17 @@ def render_dag(
 
         if requires_freshness_check(node):
             freshness_id = f"freshness_check_{suffix}"
+            upstream_tables = [
+                nodes_by_urn[urn].simple_name
+                for urn in node.upstream_urns
+                if urn in nodes_by_urn
+            ]
             lines += [
                 "",
                 f"    # Freshness gate: {_comment(freshness_reason(node))}",
                 f"    {freshness_id} = BashOperator(",
                 f"        task_id={freshness_id!r},",
-                f"        bash_command={_freshness_command(node.simple_name, database_path)!r},",
+                f"        bash_command={_freshness_command(node.simple_name, database_path, upstream_tables)!r},",
                 f"        doc_md={'Freshness gate for ' + node.simple_name!r},",
                 "    )",
             ]
