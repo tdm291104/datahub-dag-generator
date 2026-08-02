@@ -1,6 +1,8 @@
 """DataHub MCP client utilities."""
 from __future__ import annotations
 
+from typing import Any
+
 from mcp import ClientSession
 from mcp.types import Tool as MCPTool
 
@@ -56,7 +58,7 @@ _SHORT_DESCRIPTIONS: dict[str, str] = {
     ),
 }
 
-def build_llm_tools(mcp_tools: list[MCPTool]) -> list[dict]:
+def build_llm_tools(mcp_tools: list[MCPTool]) -> list[dict[str, Any]]:
     """Convert MCP tools into the provider-neutral tool definition used by the agent."""
     result = []
     for tool in mcp_tools:

@@ -5,7 +5,7 @@ Single responsibility — knows how to talk to DataHub, nothing else.
 from __future__ import annotations
 
 from collections import deque
-from typing import Optional, Type
+from typing import Any
 
 from datahub.emitter.mcp import MetadataChangeProposalWrapper
 from datahub.emitter.rest_emitter import DatahubRestEmitter
@@ -89,7 +89,7 @@ class DataHubClient:
 
     # ── discovery ───────────────────────────────────────────────────────────
 
-    def find_urn(self, table_name: str, platform_instance: str) -> Optional[str]:
+    def find_urn(self, table_name: str, platform_instance: str) -> str | None:
         """
         Search DataHub for a dataset URN by table name + platform instance.
         Returns the first exact match.
@@ -155,7 +155,7 @@ class DataHubClient:
 
     # ── helpers ─────────────────────────────────────────────────────────────
 
-    def _get_aspect(self, urn: str, aspect_type: Type) -> Optional[object]:
+    def _get_aspect(self, urn: str, aspect_type: type) -> Any:
         return self.graph.get_aspect(urn, aspect_type)
 
 

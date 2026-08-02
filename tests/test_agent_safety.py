@@ -163,7 +163,7 @@ def test_dag_id_cannot_escape_output_directory():
 
     with tempfile.TemporaryDirectory() as directory:
         args = argparse.Namespace(dry_run=False, output=directory)
-        fake_result = GenerationResult(dag_source="source", sorted_nodes=[], quality_checks=[])
+        fake_result = GenerationResult(dag_source="source", sorted_nodes=[], quality_checks=[], target_table="test")
         try:
             _emit_result(fake_result, args, "../outside")
             raise AssertionError("Path traversal DAG ID should be rejected")

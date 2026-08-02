@@ -256,7 +256,7 @@ async def _agent_loop_async(
     verbose: bool,
     llm: LLMProvider,
     settings: Settings,
-) -> str:
+) -> GenerationResult:
     client = DataHubClient(settings.datahub_server, settings.datahub_token)
     mcp_environment = {"DATAHUB_GMS_URL": settings.datahub_server}
     if settings.datahub_token:
@@ -365,6 +365,7 @@ async def _agent_loop_async(
         dag_source=rendered_dag,
         sorted_nodes=rendered_nodes,
         quality_checks=rendered_checks or [],
+        target_table=target_table,
     )
 
 

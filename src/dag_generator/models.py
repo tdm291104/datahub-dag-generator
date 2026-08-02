@@ -26,3 +26,4 @@ class GenerationResult:
     dag_source: str
     sorted_nodes: list[DatasetNode]
     quality_checks: list[QualityCheck]
+    target_table: str = ""

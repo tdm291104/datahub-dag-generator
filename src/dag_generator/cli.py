@@ -152,6 +152,10 @@ def _emit_result(result: GenerationResult, args: argparse.Namespace, dag_id: str
 
 
 def _create_pr(result: GenerationResult, args: argparse.Namespace, dag_id: str) -> None:
+    if args.dry_run:
+        print("[dry-run] --pr skipped: no branch, commit, or PR will be created.")
+        return
+
     for tool in ("git", "gh"):
         try:
             subprocess.run([tool, "--version"], capture_output=True, check=True)
@@ -186,7 +190,7 @@ def _create_pr(result: GenerationResult, args: argparse.Namespace, dag_id: str) 
     pr_body = build_pr_description(
         result=result,
         dag_id=dag_id,
-        target_table=args.target or dag_id,
+        target_table=result.target_table or dag_id,
         platform_instance=args.instance,
         schedule=args.schedule,
         dags_dir=args.dags_dir,
@@ -277,6 +281,7 @@ def _run_script(
         dag_source=dag_source,
         sorted_nodes=sorted_nodes,
         quality_checks=quality_checks,
+        target_table=target_table,
     )
 
 
