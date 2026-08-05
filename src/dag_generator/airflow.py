@@ -174,7 +174,7 @@ def render_dag(
         "    'depends_on_past': True,",
         "    'email_on_failure': True,",
         "    'retries': 1,",
-        "    'retry_delay': timedelta(minutes=5),",
+        "    'retry_delay': timedelta(seconds=30),",
         "}",
         "",
         "with DAG(",
