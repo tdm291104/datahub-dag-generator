@@ -13,7 +13,7 @@ default_args = {
     'depends_on_past': True,
     'email_on_failure': True,
     'retries': 1,
-    'retry_delay': timedelta(minutes=5),
+    'retry_delay': timedelta(seconds=30),
 }
 
 with DAG(
@@ -26,19 +26,19 @@ with DAG(
 ) as dag:
 
     # Stage 0: raw_trips
-    # DataHub URN: urn:li:dataset:(urn:li:dataPlatform:sqlite,nyc_taxi.raw_trips,PROD)
-    # Tags: daily_refresh, time_series, pii, pipeline_stage
+    # DataHub URN: urn:li:dataset:(urn:li:dataPlatform:sqlite,nyc_taxi.main.raw_trips,PROD)
+    # Tags: daily_refresh, time_series, pii, pipeline_stage, dag_managed
     # Glossary: freshness_sla, pipeline_stage
     ingest_raw_trips = BashOperator(
         task_id='ingest_raw_trips',
         bash_command="printf '%s\\n' 'Running ingest for raw_trips...'",
-        doc_md='Managed by DataHub DAG Generator. URN: urn:li:dataset:(urn:li:dataPlatform:sqlite,nyc_taxi.raw_trips,PROD)',
+        doc_md='Managed by DataHub DAG Generator. URN: urn:li:dataset:(urn:li:dataPlatform:sqlite,nyc_taxi.main.raw_trips,PROD)',
     )
 
     # Freshness gate: tag: daily_refresh, glossary: freshness_sla
     freshness_check_raw_trips = BashOperator(
         task_id='freshness_check_raw_trips',
-        bash_command='python - <<\'PY\'\nimport datetime\nimport sqlite3\nimport sys\nconnection = sqlite3.connect(\'/opt/airflow/demo-data/nyc_taxi.db\')\ntable = \'raw_trips\'\nquoted_table = \'raw_trips\'\ncolumns = {row[1] for row in connection.execute(f\'PRAGMA table_info("{quoted_table}")\')}\ncandidates = (\'trip_date\', \'tpep_pickup_datetime\', \'event_time\', \'updated_at\', \'created_at\')\ntimestamp_column = next((column for column in candidates if column in columns), None)\nif timestamp_column is None:\n    print(f\'No supported freshness column found in {table}: {sorted(columns)}\')\n    connection.close()\n    sys.exit(2)\nquery = f\'SELECT MAX("{timestamp_column}") FROM "{quoted_table}"\'\nrow = connection.execute(query).fetchone()\nconnection.close()\nlatest = row[0] if row else None\nprint(f\'Latest record in {table}:\', latest)\nlatest_date = datetime.datetime.fromisoformat(str(latest).replace(\'Z\', \'+00:00\')).date() if latest else None\ndays = (datetime.date.today() - latest_date).days if latest_date else 999\nsys.exit(0 if days <= 1 else 1)\nPY',
+        bash_command='python - <<\'PY\'\nimport datetime\nimport sqlite3\nimport sys\nconnection = sqlite3.connect(\'/opt/airflow/demo-data/nyc_taxi.db\')\ntable = \'raw_trips\'\nupstream_tables = ()\ncandidates = (\'trip_date\', \'tpep_pickup_datetime\', \'event_time\', \'updated_at\', \'created_at\')\ndef latest_date(table_name):\n    quoted_table = table_name.replace(\'"\', \'""\')\n    columns = {row[1] for row in connection.execute(f\'PRAGMA table_info("{quoted_table}")\')}\n    timestamp_column = next((column for column in candidates if column in columns), None)\n    if timestamp_column is None:\n        raise ValueError(f\'No supported freshness column found in {table_name}: {sorted(columns)}\')\n    query = f\'SELECT MAX("{timestamp_column}") FROM "{quoted_table}"\'\n    row = connection.execute(query).fetchone()\n    latest = row[0] if row else None\n    if latest is None:\n        raise ValueError(f\'No timestamped records found in {table_name}\')\n    return datetime.datetime.fromisoformat(str(latest).replace(\'Z\', \'+00:00\')).date()\ntry:\n    downstream_latest = latest_date(table)\n    upstream_latest = max((latest_date(name) for name in upstream_tables), default=None)\nexcept (TypeError, ValueError) as exc:\n    connection.close()\n    print(exc)\n    sys.exit(2)\nconnection.close()\nprint(f\'Latest record in {table}:\', downstream_latest)\nif upstream_latest is None:\n    print(\'Root dataset establishes the freshness baseline\')\n    sys.exit(0)\nlag_days = (upstream_latest - downstream_latest).days\nprint(\'Latest direct upstream record:\', upstream_latest)\nprint(\'Downstream lag in days:\', max(lag_days, 0))\nsys.exit(0 if lag_days <= 0 else 1)\nPY',
         doc_md='Freshness gate for raw_trips',
     )
 
@@ -51,19 +51,19 @@ with DAG(
     freshness_check_raw_trips >> data_audit_raw_trips
 
     # Stage 1: staging_trips
-    # DataHub URN: urn:li:dataset:(urn:li:dataPlatform:sqlite,nyc_taxi.staging_trips,PROD)
-    # Tags: daily_refresh, time_series, pii, pipeline_stage
+    # DataHub URN: urn:li:dataset:(urn:li:dataPlatform:sqlite,nyc_taxi.main.staging_trips,PROD)
+    # Tags: daily_refresh, time_series, pii, pipeline_stage, dag_managed
     # Glossary: freshness_sla, pipeline_stage
     transform_staging_trips = BashOperator(
         task_id='transform_staging_trips',
         bash_command="printf '%s\\n' 'Running transform for staging_trips...'",
-        doc_md='Managed by DataHub DAG Generator. URN: urn:li:dataset:(urn:li:dataPlatform:sqlite,nyc_taxi.staging_trips,PROD)',
+        doc_md='Managed by DataHub DAG Generator. URN: urn:li:dataset:(urn:li:dataPlatform:sqlite,nyc_taxi.main.staging_trips,PROD)',
     )
 
     # Freshness gate: tag: daily_refresh, glossary: freshness_sla
     freshness_check_staging_trips = BashOperator(
         task_id='freshness_check_staging_trips',
-        bash_command='python - <<\'PY\'\nimport datetime\nimport sqlite3\nimport sys\nconnection = sqlite3.connect(\'/opt/airflow/demo-data/nyc_taxi.db\')\ntable = \'staging_trips\'\nquoted_table = \'staging_trips\'\ncolumns = {row[1] for row in connection.execute(f\'PRAGMA table_info("{quoted_table}")\')}\ncandidates = (\'trip_date\', \'tpep_pickup_datetime\', \'event_time\', \'updated_at\', \'created_at\')\ntimestamp_column = next((column for column in candidates if column in columns), None)\nif timestamp_column is None:\n    print(f\'No supported freshness column found in {table}: {sorted(columns)}\')\n    connection.close()\n    sys.exit(2)\nquery = f\'SELECT MAX("{timestamp_column}") FROM "{quoted_table}"\'\nrow = connection.execute(query).fetchone()\nconnection.close()\nlatest = row[0] if row else None\nprint(f\'Latest record in {table}:\', latest)\nlatest_date = datetime.datetime.fromisoformat(str(latest).replace(\'Z\', \'+00:00\')).date() if latest else None\ndays = (datetime.date.today() - latest_date).days if latest_date else 999\nsys.exit(0 if days <= 1 else 1)\nPY',
+        bash_command='python - <<\'PY\'\nimport datetime\nimport sqlite3\nimport sys\nconnection = sqlite3.connect(\'/opt/airflow/demo-data/nyc_taxi.db\')\ntable = \'staging_trips\'\nupstream_tables = (\'raw_trips\',)\ncandidates = (\'trip_date\', \'tpep_pickup_datetime\', \'event_time\', \'updated_at\', \'created_at\')\ndef latest_date(table_name):\n    quoted_table = table_name.replace(\'"\', \'""\')\n    columns = {row[1] for row in connection.execute(f\'PRAGMA table_info("{quoted_table}")\')}\n    timestamp_column = next((column for column in candidates if column in columns), None)\n    if timestamp_column is None:\n        raise ValueError(f\'No supported freshness column found in {table_name}: {sorted(columns)}\')\n    query = f\'SELECT MAX("{timestamp_column}") FROM "{quoted_table}"\'\n    row = connection.execute(query).fetchone()\n    latest = row[0] if row else None\n    if latest is None:\n        raise ValueError(f\'No timestamped records found in {table_name}\')\n    return datetime.datetime.fromisoformat(str(latest).replace(\'Z\', \'+00:00\')).date()\ntry:\n    downstream_latest = latest_date(table)\n    upstream_latest = max((latest_date(name) for name in upstream_tables), default=None)\nexcept (TypeError, ValueError) as exc:\n    connection.close()\n    print(exc)\n    sys.exit(2)\nconnection.close()\nprint(f\'Latest record in {table}:\', downstream_latest)\nif upstream_latest is None:\n    print(\'Root dataset establishes the freshness baseline\')\n    sys.exit(0)\nlag_days = (upstream_latest - downstream_latest).days\nprint(\'Latest direct upstream record:\', upstream_latest)\nprint(\'Downstream lag in days:\', max(lag_days, 0))\nsys.exit(0 if lag_days <= 0 else 1)\nPY',
         doc_md='Freshness gate for staging_trips',
     )
 
@@ -76,19 +76,19 @@ with DAG(
     freshness_check_staging_trips >> data_audit_staging_trips
 
     # Stage 2: mart_daily_summary
-    # DataHub URN: urn:li:dataset:(urn:li:dataPlatform:sqlite,nyc_taxi.mart_daily_summary,PROD)
-    # Tags: daily_refresh, pipeline_stage
+    # DataHub URN: urn:li:dataset:(urn:li:dataPlatform:sqlite,nyc_taxi.main.mart_daily_summary,PROD)
+    # Tags: daily_refresh, pipeline_stage, dag_managed
     # Glossary: freshness_sla, empty_load, pipeline_stage
     aggregate_mart_daily_summary = BashOperator(
         task_id='aggregate_mart_daily_summary',
         bash_command="printf '%s\\n' 'Running aggregate for mart_daily_summary...'",
-        doc_md='Managed by DataHub DAG Generator. URN: urn:li:dataset:(urn:li:dataPlatform:sqlite,nyc_taxi.mart_daily_summary,PROD)',
+        doc_md='Managed by DataHub DAG Generator. URN: urn:li:dataset:(urn:li:dataPlatform:sqlite,nyc_taxi.main.mart_daily_summary,PROD)',
     )
 
     # Freshness gate: tag: daily_refresh, glossary: freshness_sla
     freshness_check_mart_daily_summary = BashOperator(
         task_id='freshness_check_mart_daily_summary',
-        bash_command='python - <<\'PY\'\nimport datetime\nimport sqlite3\nimport sys\nconnection = sqlite3.connect(\'/opt/airflow/demo-data/nyc_taxi.db\')\ntable = \'mart_daily_summary\'\nquoted_table = \'mart_daily_summary\'\ncolumns = {row[1] for row in connection.execute(f\'PRAGMA table_info("{quoted_table}")\')}\ncandidates = (\'trip_date\', \'tpep_pickup_datetime\', \'event_time\', \'updated_at\', \'created_at\')\ntimestamp_column = next((column for column in candidates if column in columns), None)\nif timestamp_column is None:\n    print(f\'No supported freshness column found in {table}: {sorted(columns)}\')\n    connection.close()\n    sys.exit(2)\nquery = f\'SELECT MAX("{timestamp_column}") FROM "{quoted_table}"\'\nrow = connection.execute(query).fetchone()\nconnection.close()\nlatest = row[0] if row else None\nprint(f\'Latest record in {table}:\', latest)\nlatest_date = datetime.datetime.fromisoformat(str(latest).replace(\'Z\', \'+00:00\')).date() if latest else None\ndays = (datetime.date.today() - latest_date).days if latest_date else 999\nsys.exit(0 if days <= 1 else 1)\nPY',
+        bash_command='python - <<\'PY\'\nimport datetime\nimport sqlite3\nimport sys\nconnection = sqlite3.connect(\'/opt/airflow/demo-data/nyc_taxi.db\')\ntable = \'mart_daily_summary\'\nupstream_tables = (\'staging_trips\',)\ncandidates = (\'trip_date\', \'tpep_pickup_datetime\', \'event_time\', \'updated_at\', \'created_at\')\ndef latest_date(table_name):\n    quoted_table = table_name.replace(\'"\', \'""\')\n    columns = {row[1] for row in connection.execute(f\'PRAGMA table_info("{quoted_table}")\')}\n    timestamp_column = next((column for column in candidates if column in columns), None)\n    if timestamp_column is None:\n        raise ValueError(f\'No supported freshness column found in {table_name}: {sorted(columns)}\')\n    query = f\'SELECT MAX("{timestamp_column}") FROM "{quoted_table}"\'\n    row = connection.execute(query).fetchone()\n    latest = row[0] if row else None\n    if latest is None:\n        raise ValueError(f\'No timestamped records found in {table_name}\')\n    return datetime.datetime.fromisoformat(str(latest).replace(\'Z\', \'+00:00\')).date()\ntry:\n    downstream_latest = latest_date(table)\n    upstream_latest = max((latest_date(name) for name in upstream_tables), default=None)\nexcept (TypeError, ValueError) as exc:\n    connection.close()\n    print(exc)\n    sys.exit(2)\nconnection.close()\nprint(f\'Latest record in {table}:\', downstream_latest)\nif upstream_latest is None:\n    print(\'Root dataset establishes the freshness baseline\')\n    sys.exit(0)\nlag_days = (upstream_latest - downstream_latest).days\nprint(\'Latest direct upstream record:\', upstream_latest)\nprint(\'Downstream lag in days:\', max(lag_days, 0))\nsys.exit(0 if lag_days <= 0 else 1)\nPY',
         doc_md='Freshness gate for mart_daily_summary',
     )
 
