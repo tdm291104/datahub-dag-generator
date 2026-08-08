@@ -21,7 +21,7 @@ from mcp.client.stdio import stdio_client
 from dag_generator.airflow import render_dag
 from dag_generator.config import Settings, load_settings
 from dag_generator.datahub import DataHubClient, _urn_to_table_name
-from dag_generator.lineage import topological_sort
+from dag_generator.lineage import topological_sort, transitive_reduction
 from dag_generator.llm import LLMProvider, create_llm_provider
 from dag_generator.mcp import build_llm_tools, call_tool_async
 from dag_generator.models import DatasetNode, GenerationResult, QualityCheck
@@ -187,6 +187,9 @@ def _parse_plan(
             raise ValueError("Each quality check needs string kind and after_urn")
         checks.append(QualityCheck(kind=kind, after_urn=after_urn))
 
+    # The system prompt asks for direct upstreams only, but get_lineage returns
+    # every ancestor — drop the transitive edges the model may have copied in.
+    transitive_reduction(nodes)
     return topological_sort(nodes), checks
 
 

@@ -1,4 +1,14 @@
-"""Command-line entry point for DAG generation."""
+"""
+cli.py — command-line entry point; routes to agent or script mode, then emits.
+
+exports: main() -> int | parse_args(settings) -> Namespace
+         build_pr_description(result, dag_id, target_table, ...) -> str
+used_by: pyproject.toml → datahub-dag console script | generate_dag.py
+rules:   Both modes MUST return an identical GenerationResult — everything
+         downstream (_emit_result, _create_pr) is shared and mode-agnostic.
+         _emit_result rejects DAG IDs containing path separators; keep that
+         guard, it is the only thing stopping --dag-id path traversal.
+"""
 from __future__ import annotations
 
 import argparse
@@ -10,7 +20,7 @@ from pathlib import Path
 from dag_generator.airflow import render_dag
 from dag_generator.config import Settings, load_settings
 from dag_generator.datahub import DataHubClient, _urn_to_table_name
-from dag_generator.lineage import topological_sort
+from dag_generator.lineage import topological_sort, transitive_reduction
 from dag_generator.models import DatasetNode, GenerationResult, QualityCheck
 from dag_generator.policies import recommended_quality_checks, requires_freshness_check
 
@@ -254,6 +264,7 @@ def _run_script(
         raise ValueError(
             f"Lineage has {len(nodes)} nodes; limit is {settings.max_lineage_nodes}"
         )
+    transitive_reduction(nodes)
     sorted_nodes = topological_sort(nodes)
     print("  Execution order:", " → ".join(node.simple_name for node in sorted_nodes))
 

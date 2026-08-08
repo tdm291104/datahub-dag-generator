@@ -1,6 +1,13 @@
 """
-Topologically sort the lineage graph (Kahn's algorithm).
-Returns nodes in execution order: upstream tables first, downstream last.
+lineage.py — order and simplify the upstream lineage graph before rendering.
+
+exports: topological_sort(nodes) -> list[DatasetNode]
+         transitive_reduction(nodes) -> None
+used_by: cli.py → _run_script | agent_loop.py → _parse_plan
+rules:   transitive_reduction MUTATES node.upstream_urns in place — call it
+         before topological_sort, never after the renderer has read the edges.
+         Upstream URNs outside `nodes` are left untouched by both functions;
+         they carry no path information about this subgraph.
 """
 from __future__ import annotations
 
@@ -49,3 +56,46 @@ def topological_sort(nodes: dict[str, DatasetNode]) -> list[DatasetNode]:
         )
 
     return sorted_nodes
+
+
+def transitive_reduction(nodes: dict[str, DatasetNode]) -> None:
+    """
+    Drop upstream edges already implied by a longer path through the graph.
+
+    A → B → C plus a declared A → C means the A → C edge adds nothing: C
+    already waits for A via B. Keeping it clutters the DAG and misrepresents
+    the pipeline. This removes those edges in place.
+
+    Rules:   MUTATES node.upstream_urns. Does not raise on cycles — a cycle
+             yields incomplete ancestor sets here and is caught immediately
+             after by topological_sort.
+    """
+    ancestors: dict[str, set[str]] = {}
+
+    def collect(urn: str) -> set[str]:
+        cached = ancestors.get(urn)
+        if cached is not None:
+            return cached
+        ancestors[urn] = set()  # cycle guard: an in-progress node claims no ancestors
+        result: set[str] = set()
+        for parent in nodes[urn].upstream_urns:
+            if parent in nodes:
+                result.add(parent)
+                result |= collect(parent)
+        ancestors[urn] = result
+        return result
+
+    for urn in nodes:
+        collect(urn)
+
+    for node in nodes.values():
+        known = [urn for urn in node.upstream_urns if urn in nodes]
+        redundant = {
+            urn
+            for urn in known
+            if any(other != urn and urn in ancestors[other] for other in known)
+        }
+        if redundant:
+            node.upstream_urns = [
+                urn for urn in node.upstream_urns if urn not in redundant
+            ]

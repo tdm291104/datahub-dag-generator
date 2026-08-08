@@ -1,6 +1,11 @@
 """
-Offline tests — no DataHub connection required.
-Tests the core logic: lineage sort + DAG rendering using mock data.
+test_offline.py — core logic tests (lineage, policies, renderer) on mock data.
+
+exports: test_* functions; runnable via `python tests/test_offline.py`
+used_by: Makefile → make test
+rules:   No DataHub and no LLM. Anything needing a network call belongs in a
+         different file — `make test` must stay runnable offline.
+         The trailing print/counter block must match the number of tests.
 
 Run:
     python -m pytest tests/test_offline.py -v
@@ -17,7 +22,7 @@ import sys
 import tempfile
 
 from dag_generator.airflow import _freshness_command, render_dag
-from dag_generator.lineage import topological_sort
+from dag_generator.lineage import topological_sort, transitive_reduction
 from dag_generator.models import DatasetNode
 from dag_generator.policies import (
     freshness_reason,
@@ -63,6 +68,55 @@ def test_topological_sort_order():
         f"Wrong order: {names}"
     )
     print("  PASS: topological sort order")
+
+
+def _linear_chain_with(extra_mart_upstreams: list[str]) -> dict[str, DatasetNode]:
+    """raw → staging → mart, with extra (possibly redundant) edges into mart."""
+    return {
+        RAW_URN: DatasetNode(urn=RAW_URN, simple_name="raw_trips", upstream_urns=[]),
+        STAGING_URN: DatasetNode(
+            urn=STAGING_URN, simple_name="staging_trips", upstream_urns=[RAW_URN]
+        ),
+        MART_URN: DatasetNode(
+            urn=MART_URN,
+            simple_name="mart_daily_summary",
+            upstream_urns=[*extra_mart_upstreams, STAGING_URN],
+        ),
+    }
+
+
+def test_transitive_reduction_drops_implied_edge():
+    # mart declares raw AND staging; raw is already reachable via staging.
+    nodes = _linear_chain_with([RAW_URN])
+    transitive_reduction(nodes)
+    assert nodes[MART_URN].upstream_urns == [STAGING_URN], (
+        f"Redundant edge kept: {nodes[MART_URN].upstream_urns}"
+    )
+    assert nodes[STAGING_URN].upstream_urns == [RAW_URN], "Real edge was dropped"
+    print("  PASS: transitive reduction drops implied edge")
+
+
+def test_transitive_reduction_keeps_diamond_and_foreign_urns():
+    # Diamond: raw → staging → mart and raw → side → mart. Neither edge into
+    # mart is implied by the other, so both must survive.
+    side_urn = "urn:li:dataset:(urn:li:dataPlatform:sqlite,nyc_taxi.side_trips,PROD)"
+    nodes = _linear_chain_with([side_urn])
+    nodes[side_urn] = DatasetNode(
+        urn=side_urn, simple_name="side_trips", upstream_urns=[RAW_URN]
+    )
+    transitive_reduction(nodes)
+    assert set(nodes[MART_URN].upstream_urns) == {side_urn, STAGING_URN}, (
+        f"Diamond edge dropped: {nodes[MART_URN].upstream_urns}"
+    )
+
+    # A URN outside the subgraph carries no path info — never touch it.
+    outside = "urn:li:dataset:(urn:li:dataPlatform:sqlite,other.table,PROD)"
+    nodes = _linear_chain_with([RAW_URN, outside])
+    transitive_reduction(nodes)
+    assert nodes[MART_URN].upstream_urns == [outside, STAGING_URN], (
+        f"Foreign URN mishandled: {nodes[MART_URN].upstream_urns}"
+    )
+    print("  PASS: transitive reduction keeps diamonds and foreign URNs")
 
 
 def test_topological_sort_root_has_no_upstreams():
@@ -252,6 +306,8 @@ def test_metadata_quality_checks_are_deterministic():
 def run_all():
     tests = [
         test_topological_sort_order,
+        test_transitive_reduction_drops_implied_edge,
+        test_transitive_reduction_keeps_diamond_and_foreign_urns,
         test_topological_sort_root_has_no_upstreams,
         test_freshness_detection_by_tag,
         test_freshness_detection_by_glossary,
