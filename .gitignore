@@ -10,3 +10,11 @@ data/
 build/
 dist/
 .DS_Store
+
+# temp
+tmp
+
+# AI Agent
+.claude
+.codex
+.agents
