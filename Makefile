@@ -8,7 +8,7 @@ VENV_PYTHON := $(VENV)/bin/python
 
 .DEFAULT_GOAL := help
 
-.PHONY: help venv install require-install start start-datahub stop stop-datahub status-datahub airflow-start airflow-stop airflow-status airflow-logs test check setup-demo-metadata
+.PHONY: help venv install require-install start start-datahub stop stop-datahub status-datahub airflow-start airflow-stop airflow-status airflow-logs test check setup-demo-metadata architecture-png
 
 help:
 	@printf '%s\n' \
@@ -23,7 +23,8 @@ help:
 	  'make airflow-logs    Follow Airflow logs' \
 	  'make test            Run offline tests' \
 	  'make check           Run tests and Python syntax checks' \
-	  'make setup-demo-metadata  Attach tags/terms to the nyc-taxi demo'
+	  'make setup-demo-metadata  Attach tags/terms to the nyc-taxi demo' \
+	  'make architecture-png  Re-render the architecture diagram PNG from its SVG'
 
 venv:
 	@test -x "$(VENV)/bin/python" || uv venv "$(VENV)" --python "$(PYTHON)"
@@ -72,3 +73,14 @@ check: test
 
 setup-demo-metadata: require-install
 	"$(VENV_PYTHON)" scripts/setup_demo_metadata.py
+
+# The README embeds the PNG, not the SVG: GitHub's SVG sanitizer may strip the
+# <style> block this diagram relies on for every fill, stroke, and font.
+ARCH_DIAGRAM := docs/datahub-dag-generator-architecture
+architecture-png:
+	@command -v google-chrome >/dev/null 2>&1 || { \
+	  echo "google-chrome not found on PATH; install it or export a headless Chromium as google-chrome"; exit 1; }
+	google-chrome --headless --disable-gpu --no-sandbox --hide-scrollbars \
+	  --window-size=1920,1080 --screenshot="$(ARCH_DIAGRAM).png" \
+	  "file://$(CURDIR)/$(ARCH_DIAGRAM).svg"
+	@echo "Wrote $(ARCH_DIAGRAM).png"

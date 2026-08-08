@@ -1,0 +1,254 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" width="1920" height="1080" role="img" aria-labelledby="title desc">
+  <title id="title">DataHub DAG Generator Architecture</title>
+  <desc id="desc">Five-stage architecture diagram showing DataHub DAG generation from CLI and metadata through agent or script planning, deterministic Airflow rendering, delivery, and safety controls.</desc>
+  <defs>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="130%">
+      <feDropShadow dx="0" dy="5" stdDeviation="6" flood-color="#24443d" flood-opacity="0.11"/>
+    </filter>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#54746d"/>
+    </marker>
+    <style>
+      .title { font-family: Arial, Helvetica, sans-serif; fill: #173d35; font-weight: 700; }
+      .body { font-family: Arial, Helvetica, sans-serif; fill: #24443d; }
+      .muted { font-family: Arial, Helvetica, sans-serif; fill: #617c75; }
+      .small { font-family: Arial, Helvetica, sans-serif; fill: #617c75; font-size: 14px; }
+      .panel { fill: #ffffff; stroke: #d5e1dc; stroke-width: 1.5; }
+      .card { fill: #ffffff; stroke: #d7e3de; stroke-width: 1.2; }
+      .line { fill: none; stroke: #54746d; stroke-width: 2.5; marker-end: url(#arrow); }
+      .line-soft { fill: none; stroke: #91aaa3; stroke-width: 2; stroke-dasharray: 5 5; marker-end: url(#arrow); }
+      /* Feeder segments that merge into a shared trunk — no arrowhead of their own. */
+      .line-join { fill: none; stroke: #54746d; stroke-width: 2.5; }
+      .badge { font-family: Arial, Helvetica, sans-serif; font-size: 12px; font-weight: 700; letter-spacing: 1px; }
+    </style>
+  </defs>
+
+  <rect width="1920" height="1080" fill="#f7f3e9"/>
+  <path d="M48 129 H1872" stroke="#c9d9d3" stroke-width="1.5"/>
+  <text x="48" y="72" class="title" font-size="38">DataHub DAG Generator Architecture</text>
+  <text x="48" y="104" class="muted" font-size="19">Metadata-driven Airflow DAG generation with bounded AI and deterministic safety gates</text>
+  <rect x="1634" y="48" width="238" height="42" rx="21" fill="#e5f1ec" stroke="#c8ddd5"/>
+  <text x="1753" y="75" text-anchor="middle" class="body" font-size="14" font-weight="700">AIRFLOW 3 • DATAHUB</text>
+  <rect x="1452" y="48" width="166" height="42" rx="21" fill="#fffaf2" stroke="#ebc584"/>
+  <text x="1535" y="75" text-anchor="middle" class="body" font-size="14" font-weight="700" fill="#8a6d2f">27 OFFLINE TESTS</text>
+
+  <!-- Column 1: Operator & CLI -->
+  <text x="48" y="158" class="muted" font-size="14" font-weight="700" letter-spacing="1.4">01 / ENTRY POINT</text>
+  <rect x="48" y="178" width="330" height="616" rx="22" class="panel" filter="url(#shadow)"/>
+  <rect x="48" y="178" width="330" height="70" rx="22" fill="#dff0e8"/>
+  <rect x="48" y="226" width="330" height="22" fill="#dff0e8"/>
+  <circle cx="82" cy="213" r="17" fill="#2f7765"/>
+  <text x="82" y="218" text-anchor="middle" class="badge" fill="#ffffff">1</text>
+  <text x="112" y="219" class="title" font-size="20">Operator &amp; CLI</text>
+
+  <rect x="70" y="274" width="286" height="100" rx="14" class="card"/>
+  <circle cx="96" cy="303" r="13" fill="#dff0e8"/>
+  <text x="96" y="307" text-anchor="middle" class="badge" fill="#2f7765">DE</text>
+  <text x="120" y="306" class="body" font-size="17" font-weight="700">Data engineer</text>
+  <text x="92" y="338" class="small">Chooses target dataset, instance,</text>
+  <text x="92" y="358" class="small">schedule, output, and optional actions.</text>
+
+  <rect x="70" y="398" width="286" height="158" rx="14" fill="#eff8f4" stroke="#bcd8cd" stroke-width="1.2"/>
+  <text x="92" y="432" class="title" font-size="19">datahub-dag</text>
+  <text x="92" y="456" class="small">CLI routes both modes into one</text>
+  <text x="92" y="476" class="small">shared GenerationResult contract.</text>
+  <rect x="92" y="497" width="104" height="32" rx="16" fill="#d7ebf7"/>
+  <text x="144" y="518" text-anchor="middle" class="badge" fill="#32657a">AGENT MODE</text>
+  <rect x="208" y="497" width="104" height="32" rx="16" fill="#eee4f6"/>
+  <text x="260" y="518" text-anchor="middle" class="badge" fill="#6d5088">SCRIPT MODE</text>
+
+  <rect x="70" y="590" width="286" height="126" rx="14" class="card"/>
+  <text x="92" y="621" class="body" font-size="16" font-weight="700">Controlled inputs</text>
+  <text x="92" y="648" class="small">--target / --instance / --schedule</text>
+  <text x="92" y="670" class="small">--dry-run / --writeback / --pr</text>
+
+  <!-- Column 2: DataHub Metadata -->
+  <text x="420" y="158" class="muted" font-size="14" font-weight="700" letter-spacing="1.4">02 / METADATA SYSTEM</text>
+  <rect x="420" y="178" width="330" height="616" rx="22" class="panel" filter="url(#shadow)"/>
+  <rect x="420" y="178" width="330" height="70" rx="22" fill="#dcecf5"/>
+  <rect x="420" y="226" width="330" height="22" fill="#dcecf5"/>
+  <circle cx="454" cy="213" r="17" fill="#3c7794"/>
+  <text x="454" y="218" text-anchor="middle" class="badge" fill="#ffffff">2</text>
+  <text x="484" y="219" class="title" font-size="20">DataHub Metadata</text>
+
+  <rect x="442" y="274" width="286" height="132" rx="14" class="card"/>
+  <text x="464" y="307" class="body" font-size="17" font-weight="700">DataHub GMS</text>
+  <text x="464" y="334" class="small">Dataset discovery + lineage graph</text>
+  <text x="464" y="356" class="small">Tags + glossary terms per node</text>
+  <path d="M464 378 H678" stroke="#bed4df" stroke-width="1.2"/>
+  <text x="464" y="394" class="small">Search  •  upstream BFS  •  entities</text>
+
+  <rect x="442" y="438" width="286" height="112" rx="14" fill="#eef7fb" stroke="#bdd8e5" stroke-width="1.2"/>
+  <rect x="462" y="457" width="69" height="25" rx="12" fill="#d7ebf7"/>
+  <text x="497" y="474" text-anchor="middle" class="badge" fill="#32657a">AGENT</text>
+  <text x="462" y="510" class="body" font-size="16" font-weight="700">mcp-server-datahub</text>
+  <text x="462" y="534" class="small">MCP bridge launched via uvx</text>
+
+  <rect x="442" y="580" width="286" height="112" rx="14" fill="#f5f0fa" stroke="#d9cce6" stroke-width="1.2"/>
+  <rect x="462" y="599" width="76" height="25" rx="12" fill="#eee4f6"/>
+  <text x="500" y="616" text-anchor="middle" class="badge" fill="#6d5088">SCRIPT</text>
+  <rect x="546" y="599" width="140" height="25" rx="12" fill="#e6ecf5"/>
+  <text x="616" y="616" text-anchor="middle" class="badge" font-size="11" fill="#4a5f80">AGENT WRITE-BACK</text>
+  <text x="462" y="652" class="body" font-size="16" font-weight="700">acryl-datahub SDK</text>
+  <text x="462" y="676" class="small" font-size="13">Script reads • both modes write back</text>
+  <!-- GMS is the shared source for both metadata access paths. -->
+  <path d="M585 406 H432 V636" fill="none" stroke="#91aaa3" stroke-width="2" stroke-dasharray="5 5"/>
+  <path d="M432 494 H442" class="line"/>
+  <path d="M432 636 H442" class="line"/>
+
+  <!-- Column 3: Planning -->
+  <text x="792" y="158" class="muted" font-size="14" font-weight="700" letter-spacing="1.4">03 / PLAN CONSTRUCTION</text>
+  <rect x="792" y="178" width="330" height="616" rx="22" class="panel" filter="url(#shadow)"/>
+  <rect x="792" y="178" width="330" height="70" rx="22" fill="#e9e1f4"/>
+  <rect x="792" y="226" width="330" height="22" fill="#e9e1f4"/>
+  <circle cx="826" cy="213" r="17" fill="#765a95"/>
+  <text x="826" y="218" text-anchor="middle" class="badge" fill="#ffffff">3</text>
+  <text x="856" y="219" class="title" font-size="20">Planning</text>
+
+  <rect x="814" y="274" width="286" height="142" rx="14" fill="#f5f0fa" stroke="#d7c8e5" stroke-width="1.2"/>
+  <rect x="834" y="294" width="70" height="25" rx="12" fill="#e6d8f1"/>
+  <text x="869" y="311" text-anchor="middle" class="badge" fill="#6d5088">AGENT</text>
+  <text x="834" y="348" class="body" font-size="16" font-weight="700">Bounded agent loop</text>
+  <text x="834" y="372" class="small">DataHub MCP tools + validated plan</text>
+  <text x="834" y="394" class="small">OpenRouter or Anthropic</text>
+
+  <rect x="814" y="452" width="286" height="126" rx="14" fill="#eef7fb" stroke="#c6dce7" stroke-width="1.2"/>
+  <rect x="834" y="472" width="76" height="25" rx="12" fill="#d7ebf7"/>
+  <text x="872" y="489" text-anchor="middle" class="badge" fill="#32657a">SCRIPT</text>
+  <text x="834" y="526" class="body" font-size="16" font-weight="700">Deterministic policy mapping</text>
+  <text x="834" y="550" class="small">Metadata signals → quality checks</text>
+
+  <!-- Agent and script are alternatives: both feed one trunk into the validated plan. -->
+  <path d="M814 345 H803 V612 H957" class="line-join"/>
+  <path d="M957 578 V612" class="line-join"/>
+  <circle cx="957" cy="612" r="4" fill="#54746d"/>
+  <path d="M957 612 V636" class="line"/>
+  <text x="975" y="606" class="small" fill="#765a95">converge</text>
+  <rect x="814" y="636" width="286" height="100" rx="14" fill="#fffaf2" stroke="#ebc584" stroke-width="1.5"/>
+  <text x="836" y="671" class="title" font-size="18">Validated DAG plan</text>
+  <text x="836" y="696" class="small">Dataset nodes • accepted checks</text>
+  <text x="836" y="719" class="small">One mode-agnostic handoff</text>
+
+  <!-- Column 4: Deterministic DAG Build -->
+  <text x="1164" y="158" class="muted" font-size="14" font-weight="700" letter-spacing="1.4">04 / DETERMINISTIC BUILD</text>
+  <rect x="1164" y="178" width="330" height="616" rx="22" class="panel" filter="url(#shadow)"/>
+  <rect x="1164" y="178" width="330" height="70" rx="22" fill="#dff0e8"/>
+  <rect x="1164" y="226" width="330" height="22" fill="#dff0e8"/>
+  <circle cx="1198" cy="213" r="17" fill="#2f7765"/>
+  <text x="1198" y="218" text-anchor="middle" class="badge" fill="#ffffff">4</text>
+  <text x="1228" y="219" class="title" font-size="20">Deterministic DAG Build</text>
+
+  <rect x="1186" y="274" width="286" height="112" rx="14" class="card"/>
+  <text x="1208" y="308" class="body" font-size="16" font-weight="700">Graph normalization</text>
+  <rect x="1208" y="329" width="119" height="31" rx="15" fill="#e5f1ec"/>
+  <text x="1267" y="350" text-anchor="middle" class="badge" fill="#2f7765">REDUCE EDGES</text>
+  <rect x="1338" y="329" width="111" height="31" rx="15" fill="#e5f1ec"/>
+  <text x="1394" y="350" text-anchor="middle" class="badge" fill="#2f7765">KAHN SORT</text>
+  <text x="1208" y="379" class="small">Transitive reduction + topological order</text>
+
+  <rect x="1186" y="414" width="286" height="120" rx="14" class="card"/>
+  <text x="1208" y="443" class="body" font-size="16" font-weight="700">Metadata policies</text>
+  <rect x="1208" y="456" width="52" height="21" rx="10" fill="#e5f1ec"/>
+  <text x="1234" y="471" text-anchor="middle" class="badge" font-size="10" fill="#2f7765">BOTH</text>
+  <text x="1268" y="471" class="small">freshness — renderer decides</text>
+  <rect x="1208" y="483" width="60" height="21" rx="10" fill="#eee4f6"/>
+  <text x="1238" y="498" text-anchor="middle" class="badge" font-size="10" fill="#6d5088">SCRIPT</text>
+  <text x="1276" y="498" class="small">PII / Empty Load → checks</text>
+  <rect x="1208" y="510" width="60" height="21" rx="10" fill="#d7ebf7"/>
+  <text x="1238" y="525" text-anchor="middle" class="badge" font-size="10" fill="#32657a">AGENT</text>
+  <text x="1276" y="525" class="small">LLM proposes, enum-validated</text>
+
+  <rect x="1186" y="556" width="286" height="124" rx="14" fill="#eff8f4" stroke="#bcd8cd" stroke-width="1.2"/>
+  <text x="1208" y="586" class="title" font-size="17">Airflow 3 renderer</text>
+  <text x="1208" y="609" class="small" font-size="13">Tasks: ingest / transform / aggregate</text>
+  <text x="1208" y="628" class="small" font-size="13">Gates: freshness / PII audit / row count</text>
+  <text x="1208" y="647" class="small" font-size="13">Dependencies from lineage edges</text>
+  <text x="1208" y="668" class="small" font-size="11.5" font-style="italic" fill="#96897a">Task bodies are stubs — swap in real ETL</text>
+  <rect x="1186" y="698" width="286" height="70" rx="14" fill="#fffaf2" stroke="#ebc584" stroke-width="1.5"/>
+  <text x="1208" y="726" class="title" font-size="17">GenerationResult</text>
+  <text x="1208" y="750" class="small" font-size="13">Sorted nodes • checks • DAG source</text>
+  <path d="M1329 680 V698" class="line"/>
+
+  <!-- Column 5: Delivery & Runtime -->
+  <text x="1536" y="158" class="muted" font-size="14" font-weight="700" letter-spacing="1.4">05 / DELIVERY &amp; RUNTIME</text>
+  <rect x="1536" y="178" width="336" height="616" rx="22" class="panel" filter="url(#shadow)"/>
+  <rect x="1536" y="178" width="336" height="70" rx="22" fill="#dcecf5"/>
+  <rect x="1536" y="226" width="336" height="22" fill="#dcecf5"/>
+  <circle cx="1570" cy="213" r="17" fill="#3c7794"/>
+  <text x="1570" y="218" text-anchor="middle" class="badge" fill="#ffffff">5</text>
+  <text x="1600" y="219" class="title" font-size="20">Delivery &amp; Runtime</text>
+
+  <rect x="1558" y="274" width="292" height="104" rx="14" fill="#eef7fb" stroke="#bdd8e5" stroke-width="1.2"/>
+  <text x="1580" y="309" class="title" font-size="18">dags/&lt;dag_id&gt;.py</text>
+  <text x="1580" y="336" class="small">Local, deterministic generated source</text>
+  <text x="1580" y="358" class="small">Saved only after validation.</text>
+
+  <rect x="1558" y="410" width="292" height="78" rx="14" class="card"/>
+  <text x="1580" y="442" class="body" font-size="16" font-weight="700">Dry-run preview</text>
+  <text x="1580" y="466" class="small">No file or metadata changes</text>
+
+  <rect x="1558" y="520" width="292" height="80" rx="14" fill="#fff7eb" stroke="#ebc584" stroke-width="1.2"/>
+  <rect x="1742" y="536" width="87" height="23" rx="11" fill="#f7d7a3"/>
+  <text x="1786" y="552" text-anchor="middle" class="badge" fill="#9a5a11">OPTIONAL</text>
+  <text x="1580" y="553" class="body" font-size="16" font-weight="700">DataHub write-back</text>
+  <text x="1580" y="578" class="small">Rendered-plan URNs only</text>
+
+  <rect x="1558" y="626" width="292" height="80" rx="14" fill="#fff7eb" stroke="#ebc584" stroke-width="1.2"/>
+  <rect x="1742" y="642" width="87" height="23" rx="11" fill="#f7d7a3"/>
+  <text x="1786" y="658" text-anchor="middle" class="badge" fill="#9a5a11">OPTIONAL</text>
+  <text x="1580" y="659" class="body" font-size="16" font-weight="700">GitHub PR</text>
+  <text x="1580" y="684" class="small">Branch, commit, push, PR</text>
+
+  <rect x="1558" y="738" width="292" height="34" rx="17" fill="#e5f1ec"/>
+  <text x="1704" y="760" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" fill="#2f7765" font-size="12" font-weight="700">Optional local Airflow 3 runtime via Docker</text>
+
+  <!-- Flow connectors, kept in the white gutters between column panels. -->
+  <path d="M356 513 H395 V494 H420" class="line"/>
+  <text x="376" y="480" text-anchor="middle" class="small">agent</text>
+  <path d="M356 513 H395 V636 H420" class="line"/>
+  <text x="376" y="616" text-anchor="middle" class="small">script</text>
+  <path d="M728 494 H770 V318 H814" class="line"/>
+  <path d="M728 636 H770 V515 H814" class="line"/>
+  <!-- The box is already named "Validated DAG plan"; a label here would only collide
+       with both panel edges (the gutter is 42px wide). -->
+  <path d="M1100 686 H1140 V612 H1186" class="line"/>
+  <!-- Independent delivery choices branch from the post-render result, never from the saved file. -->
+  <path d="M1472 725 H1518 V326" fill="none" stroke="#91aaa3" stroke-width="2" stroke-dasharray="5 5"/>
+  <!-- Rotated to fit the 42px gutter without overlapping either panel edge. -->
+  <text x="1506" y="520" text-anchor="middle" class="small" font-size="13"
+        transform="rotate(-90 1506 520)">rendered output</text>
+  <path d="M1518 326 H1558" class="line-soft"/>
+  <path d="M1518 449 H1558" class="line-soft"/>
+  <path d="M1518 560 H1558" class="line-soft"/>
+  <path d="M1518 666 H1558" class="line-soft"/>
+
+  <!-- Safety & Operations band -->
+  <rect x="48" y="834" width="1824" height="198" rx="22" fill="#173d35" filter="url(#shadow)"/>
+  <rect x="48" y="834" width="10" height="198" rx="5" fill="#e89a3b"/>
+  <text x="82" y="876" font-family="Arial, Helvetica, sans-serif" fill="#ffffff" font-size="22" font-weight="700">Safety &amp; Operations</text>
+  <text x="82" y="901" font-family="Arial, Helvetica, sans-serif" fill="#b8d5cb" font-size="14">Bounded AI proposes structure; application code validates, renders, and controls side effects.</text>
+  <path d="M82 924 H1838" stroke="#427167" stroke-width="1"/>
+
+  <circle cx="101" cy="960" r="8" fill="#e89a3b"/>
+  <text x="121" y="958" font-family="Arial, Helvetica, sans-serif" fill="#ffffff" font-size="15" font-weight="700">LLM never supplies arbitrary shell commands</text>
+  <text x="121" y="981" font-family="Arial, Helvetica, sans-serif" fill="#b8d5cb" font-size="13">CLI controls IDs, schedule, output, and executable templates.</text>
+
+  <circle cx="515" cy="960" r="8" fill="#e89a3b"/>
+  <text x="535" y="958" font-family="Arial, Helvetica, sans-serif" fill="#ffffff" font-size="15" font-weight="700">Table names derived from URNs</text>
+  <text x="535" y="981" font-family="Arial, Helvetica, sans-serif" fill="#b8d5cb" font-size="13">Never trusted from LLM input before generated SQL.</text>
+
+  <circle cx="885" cy="960" r="8" fill="#e89a3b"/>
+  <text x="905" y="958" font-family="Arial, Helvetica, sans-serif" fill="#ffffff" font-size="15" font-weight="700">Only predefined checks accepted</text>
+  <text x="905" y="981" font-family="Arial, Helvetica, sans-serif" fill="#b8d5cb" font-size="13">Freshness, PII audit, and row count are validated gates.</text>
+
+  <circle cx="1274" cy="960" r="8" fill="#e89a3b"/>
+  <text x="1294" y="958" font-family="Arial, Helvetica, sans-serif" fill="#ffffff" font-size="15" font-weight="700">Write-back is opt-in, rendered URNs only</text>
+  <text x="1294" y="981" font-family="Arial, Helvetica, sans-serif" fill="#b8d5cb" font-size="13">Disabled by default; dry-run skips metadata changes.</text>
+
+  <text x="82" y="1016" font-family="Arial, Helvetica, sans-serif" fill="#f6d39d" font-size="14" font-weight="700">LIMITS</text>
+  <text x="140" y="1016" font-family="Arial, Helvetica, sans-serif" fill="#ffffff" font-size="14">MAX_AGENT_TURNS</text>
+  <text x="323" y="1016" font-family="Arial, Helvetica, sans-serif" fill="#8fb8ac" font-size="14">•</text>
+  <text x="344" y="1016" font-family="Arial, Helvetica, sans-serif" fill="#ffffff" font-size="14">MAX_TOOL_RESULT_CHARS</text>
+  <text x="574" y="1016" font-family="Arial, Helvetica, sans-serif" fill="#8fb8ac" font-size="14">•</text>
+  <text x="595" y="1016" font-family="Arial, Helvetica, sans-serif" fill="#ffffff" font-size="14">MAX_LINEAGE_NODES</text>
+</svg>

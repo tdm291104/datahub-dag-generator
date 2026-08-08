@@ -7,7 +7,16 @@ can review and merge — no hand-editing required.
 
 A sample generated DAG is committed at [`dags/nyc_taxi_pipeline.py`](dags/nyc_taxi_pipeline.py).
 
+## Architecture
+
+![DataHub DAG Generator architecture](docs/datahub-dag-generator-architecture.png)
+
+<sub>Editable source: [`docs/datahub-dag-generator-architecture.svg`](docs/datahub-dag-generator-architecture.svg)
+— regenerate the PNG with `make architecture-png`.</sub>
+
 ## How it works
+
+The command-level flow behind the diagram:
 
 ```text
 datahub-dag --target mart_daily_summary --instance nyc_taxi --pr
