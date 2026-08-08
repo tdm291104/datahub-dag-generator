@@ -13,7 +13,7 @@ default_args = {
     'depends_on_past': True,
     'email_on_failure': True,
     'retries': 1,
-    'retry_delay': timedelta(seconds=30),
+    'retry_delay': timedelta(seconds=10),
 }
 
 with DAG(
@@ -27,7 +27,7 @@ with DAG(
 
     # Stage 0: raw_trips
     # DataHub URN: urn:li:dataset:(urn:li:dataPlatform:sqlite,nyc_taxi.main.raw_trips,PROD)
-    # Tags: daily_refresh, time_series, pii, pipeline_stage, dag_managed
+    # Tags: daily_refresh, time_series, pii, pipeline_stage
     # Glossary: freshness_sla, pipeline_stage
     ingest_raw_trips = BashOperator(
         task_id='ingest_raw_trips',
@@ -52,7 +52,7 @@ with DAG(
 
     # Stage 1: staging_trips
     # DataHub URN: urn:li:dataset:(urn:li:dataPlatform:sqlite,nyc_taxi.main.staging_trips,PROD)
-    # Tags: daily_refresh, time_series, pii, pipeline_stage, dag_managed
+    # Tags: daily_refresh, time_series, pii, pipeline_stage
     # Glossary: freshness_sla, pipeline_stage
     transform_staging_trips = BashOperator(
         task_id='transform_staging_trips',
@@ -77,7 +77,7 @@ with DAG(
 
     # Stage 2: mart_daily_summary
     # DataHub URN: urn:li:dataset:(urn:li:dataPlatform:sqlite,nyc_taxi.main.mart_daily_summary,PROD)
-    # Tags: daily_refresh, pipeline_stage, dag_managed
+    # Tags: daily_refresh, pipeline_stage
     # Glossary: freshness_sla, empty_load, pipeline_stage
     aggregate_mart_daily_summary = BashOperator(
         task_id='aggregate_mart_daily_summary',

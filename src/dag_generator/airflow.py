@@ -1,4 +1,15 @@
-"""Render safe, deterministic Airflow DAG source from a validated plan."""
+"""
+airflow.py — render safe, deterministic Airflow 3 DAG source from a validated plan.
+
+exports: render_dag(sorted_nodes, dag_id, schedule, ...) -> str
+         SUPPORTED_CHECKS
+used_by: cli.py → _run_script | agent_loop.py → _execute_custom_tool
+rules:   Every executable string is built here, never taken from LLM input.
+         Interpolate untrusted metadata with shlex.quote (shell) or !r (Python)
+         — the renderer is the last line of defence before code runs.
+         Heredocs MUST stay single-quoted (<<'PY') so the shell does not expand
+         anything inside them.
+"""
 from __future__ import annotations
 
 import hashlib
@@ -174,7 +185,7 @@ def render_dag(
         "    'depends_on_past': True,",
         "    'email_on_failure': True,",
         "    'retries': 1,",
-        "    'retry_delay': timedelta(seconds=30),",
+        "    'retry_delay': timedelta(seconds=10),",
         "}",
         "",
         "with DAG(",
