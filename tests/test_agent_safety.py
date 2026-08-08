@@ -1,4 +1,11 @@
-"""Focused checks for the LLM-to-code trust boundary."""
+"""
+test_agent_safety.py — focused checks for the LLM-to-code trust boundary.
+
+exports: test_* functions; runnable via `python tests/test_agent_safety.py`
+used_by: Makefile → make test
+rules:   Every test here asserts a security property. Do not relax an
+         assertion to make a test pass — fix the code instead.
+"""
 from __future__ import annotations
 
 import ast
@@ -92,6 +99,44 @@ def test_plan_normalizes_metadata_urns():
     assert nodes[0].glossary_terms == ["freshness_sla", "plain_term"]
 
 
+def test_table_name_comes_from_urn_not_from_llm():
+    nodes, _ = _parse_plan(
+        {
+            "nodes": [
+                {
+                    "urn": URN,
+                    "simple_name": 'evil"; DROP TABLE demo; --',
+                    "upstream_urns": [],
+                    "tags": [],
+                    "glossary_terms": [],
+                }
+            ],
+            "quality_checks": [],
+        },
+        max_nodes=10,
+    )
+    assert nodes[0].simple_name == "table"
+
+    try:
+        _parse_plan(
+            {
+                "nodes": [
+                    {
+                        "urn": "not-a-urn",
+                        "upstream_urns": [],
+                        "tags": [],
+                        "glossary_terms": [],
+                    }
+                ],
+                "quality_checks": [],
+            },
+            max_nodes=10,
+        )
+        raise AssertionError("Unparseable URN should be rejected")
+    except ValueError as exc:
+        assert "Cannot derive a table name" in str(exc)
+
+
 def test_writeback_is_limited_to_rendered_urns():
     class FakeClient:
         def __init__(self):
@@ -175,6 +220,7 @@ if __name__ == "__main__":
     test_renderer_quotes_untrusted_metadata()
     test_plan_rejects_unknown_upstream_and_arbitrary_check()
     test_plan_normalizes_metadata_urns()
+    test_table_name_comes_from_urn_not_from_llm()
     test_writeback_is_limited_to_rendered_urns()
     test_dag_id_cannot_escape_output_directory()
-    print("5 agent safety tests passed")
+    print("6 agent safety tests passed")

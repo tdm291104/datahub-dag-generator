@@ -178,6 +178,6 @@ priority over the file value.
 ## Verification
 
 ```bash
-make test   # 24 offline unit checks — no DataHub or LLM required
+make test   # 25 offline unit checks — no DataHub or LLM required
 make check  # tests + Python syntax check across the whole package
 ```

@@ -1,4 +1,14 @@
-"""Bounded LLM agent loop for DataHub discovery and DAG planning."""
+"""
+agent_loop.py — bounded LLM agent loop for DataHub discovery and DAG planning.
+
+exports: run_dag_agent(target_table, platform_instance, ...) -> GenerationResult
+used_by: cli.py → _run_agent
+rules:   LLM output is untrusted. simple_name is ALWAYS derived from the URN via
+         _urn_to_table_name — never taken from LLM input, because it is
+         interpolated into the generated freshness/row-count SQL.
+         Only render_airflow_dag and datahub_write_back are app-side tools;
+         everything else is forwarded to the DataHub MCP server.
+"""
 from __future__ import annotations
 
 import asyncio
@@ -10,7 +20,7 @@ from mcp.client.stdio import stdio_client
 
 from dag_generator.airflow import render_dag
 from dag_generator.config import Settings, load_settings
-from dag_generator.datahub import DataHubClient
+from dag_generator.datahub import DataHubClient, _urn_to_table_name
 from dag_generator.lineage import topological_sort
 from dag_generator.llm import LLMProvider, create_llm_provider
 from dag_generator.mcp import build_llm_tools, call_tool_async
@@ -33,14 +43,12 @@ CUSTOM_TOOLS: list[dict[str, Any]] = [
                         "type": "object",
                         "required": [
                             "urn",
-                            "simple_name",
                             "upstream_urns",
                             "tags",
                             "glossary_terms",
                         ],
                         "properties": {
                             "urn": {"type": "string"},
-                            "simple_name": {"type": "string"},
                             "upstream_urns": {
                                 "type": "array",
                                 "items": {"type": "string"},
@@ -103,7 +111,8 @@ DataHub MCP tools, then create a structured DAG plan.
 5. Call datahub_write_back only when the user message explicitly enables it.
 
 Never produce or request arbitrary shell commands. Use direct upstream URNs,
-not all ancestors. The renderer validates and topologically sorts the plan.
+not all ancestors. The renderer validates and topologically sorts the plan, and
+derives every table name from its URN — do not report table names yourself.
 """
 
 
@@ -132,11 +141,13 @@ def _parse_plan(
         if not isinstance(raw_node, dict):
             raise ValueError("Each node must be an object")
         urn = raw_node.get("urn")
-        simple_name = raw_node.get("simple_name")
         if not isinstance(urn, str) or not urn:
             raise ValueError("Each node needs a non-empty urn")
-        if not isinstance(simple_name, str) or not simple_name:
-            raise ValueError(f"Node {urn} needs a non-empty simple_name")
+        # Rules: the table name goes into generated SQL — derive it from the URN
+        # instead of trusting whatever name the LLM reports.
+        simple_name = _urn_to_table_name(urn)
+        if simple_name == urn:
+            raise ValueError(f"Cannot derive a table name from URN: {urn}")
         if urn in nodes:
             raise ValueError(f"Duplicate node URN: {urn}")
         nodes[urn] = DatasetNode(
